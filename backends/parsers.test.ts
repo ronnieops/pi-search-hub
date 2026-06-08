@@ -15,6 +15,7 @@ import {
 	parsePerplexity,
 	parseSearXNG,
 	parseJina,
+	parseSofya,
 } from "./parsers.js";
 
 // ---------------------------------------------------------------------------
@@ -406,5 +407,47 @@ describe("parseJina", () => {
 		const data = { data: [{ title: "J", url: "https://j.com", content: "x".repeat(3000) }] };
 		const results = parseJina(data, 10);
 		expect(results[0].content.length).toBe(2000);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Sofya
+// ---------------------------------------------------------------------------
+
+describe("parseSofya", () => {
+	it("parses results with content and description", () => {
+		const data = {
+			results: [
+				{ title: "S", url: "https://s.com", content: "full page text", description: "snippet" },
+			],
+		};
+		const results = parseSofya(data, 10);
+		expect(results[0].title).toBe("S");
+		expect(results[0].content).toBe("full page text");
+		// snippet prefers description (the SERP snippet) over full content
+		expect(results[0].snippet).toBe("snippet");
+	});
+
+	it("falls back to content when description is missing", () => {
+		const data = { results: [{ title: "S", url: "https://s.com", content: "body only" }] };
+		const results = parseSofya(data, 10);
+		expect(results[0].snippet).toBe("body only");
+	});
+
+	it("truncates content to 2000 chars", () => {
+		const data = { results: [{ title: "S", url: "https://s.com", content: "x".repeat(3000) }] };
+		const results = parseSofya(data, 10);
+		expect(results[0].content.length).toBe(2000);
+	});
+
+	it("handles non-array data and missing fields", () => {
+		expect(parseSofya({}, 10)).toHaveLength(0);
+		expect(parseSofya({ results: "nope" }, 10)).toHaveLength(0);
+		expect(parseSofya({ results: [{}] }, 10)[0]).toEqual({ title: "", url: "", snippet: "", content: "" });
+	});
+
+	it("respects numResults limit", () => {
+		const data = { results: Array.from({ length: 10 }, (_, i) => ({ url: `https://s.com/${i}`, title: `T${i}` })) };
+		expect(parseSofya(data, 3)).toHaveLength(3);
 	});
 });

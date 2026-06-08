@@ -329,3 +329,30 @@ export function parseJina(
 		snippet: ((r.content as string) || (r.description as string) || "").slice(0, 500),
 	}));
 }
+
+// ---------------------------------------------------------------------------
+// Sofya (sofya.co)
+// Response: { results: [{ title, url, content, description, published_date }] }
+// `content` is full extracted page text (basic depth); `description` is the SERP snippet.
+// ---------------------------------------------------------------------------
+
+export interface SofyaParsedResult extends ParsedResult {
+	content: string;
+}
+
+export function parseSofya(
+	data: Record<string, unknown>,
+	numResults: number,
+): SofyaParsedResult[] {
+	const rawResults = data.results;
+	const results = Array.isArray(rawResults) ? rawResults : [];
+	return results.slice(0, numResults).map((r) => {
+		const content = (r.content as string) || (r.description as string) || "";
+		return {
+			title: (r.title as string) || "",
+			url: (r.url as string) || "",
+			snippet: ((r.description as string) || content).slice(0, 500),
+			content: content.slice(0, 2000),
+		};
+	});
+}

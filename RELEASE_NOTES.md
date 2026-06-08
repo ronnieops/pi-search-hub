@@ -1,3 +1,24 @@
+# Release v2.2.0 (Sofya backend + pluggable web_read reader)
+
+## 🚀 New
+- **Sofya** ([sofya.co](https://sofya.co)): adds a `web_search` backend (`POST /v1/search`, full extracted page content at `basic` depth) AND a `web_read` reader (`POST /v1/fetch`, 250+ site-specific parsers), both from a single API key.
+- **Pluggable `web_read` reader**: `web_read` is no longer hardcoded to Jina. Choose `jina` (default, free) or `sofya` via the new top-level `"reader"` config setting, or per-call with the `reader` tool param.
+
+## 📊 Stats
+- 17 backends total (was 16)
+- 70 tests passing (was 65), added `parseSofya` coverage
+
+## 🔧 Changes
+- `extensions/backends/sofya.ts`: New adapter exporting `searchSofya` + `fetchSofya`.
+- `parsers.ts`: Added `parseSofya` (full `content` + `description` snippet).
+- `registry.ts`: Registered `sofya` BACKEND_DEF (honors `searchDepth`, `topic`).
+- `types.ts`: Added `sofya` to SearchConfig, top-level `reader`, and `searchDepth`/`topic` per-backend options.
+- `credentials.ts`: Added `SEARCH_SOFYA_API_KEY` convenience env var.
+- `search-hub.ts`: `web_read` branches on reader (Jina vs Sofya Fetch); `web_search` backend enum completed (added the 4 v2.1.0 backends that were missing from the enum, plus `sofya`).
+- `package.json`: Description/keywords updated to 17 backends.
+
+---
+
 # Release v2.1.0 (4 new backends)
 
 ## 🚀 New Backends

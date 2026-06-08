@@ -44,8 +44,9 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 import type { BackendConfig, SearchConfig, SearchResult, SearchResultWithBackend } from "./types.js";
-import { getAgentDir, timeoutSignal, sanitizeError, clearCooldowns } from "./utils.js";
+import { getAgentDir, timeoutSignal, sanitizeError, clearCooldowns, MISSING_KEY_HELP } from "./utils.js";
 import { resolveBackendKey, getKeySource } from "./credentials.js";
+import { fetchSofya } from "./backends/sofya.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
 import { selectBackendsForFallback, reciprocalRankFusion } from "./dispatch.js";
@@ -90,7 +91,8 @@ export default function (pi: ExtensionAPI) {
 			),
 			backend: Type.Optional(
 				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa",
-					"brave", "langsearch", "firecrawl", "websearchapi", "perplexity", "searxng", "auto"] as const, {
+					"brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
+					"searxng", "linkup", "youcom", "fastcrw", "sofya", "auto"] as const, {
 					description:
 						"Backend to use. 'auto' picks the best configured backend (default)",
 				}),
@@ -265,7 +267,14 @@ export default function (pi: ExtensionAPI) {
 			objective: Type.Optional(
 				Type.String({
 					description:
-						"CSS selector for targeted extraction. Use when only part of the page matters.",
+						"CSS selector for targeted extraction. Use when only part of the page matters. (Jina reader only.)",
+				}),
+			),
+			reader: Type.Optional(
+				StringEnum(["jina", "sofya"] as const, {
+					description:
+						"Reader backend: 'jina' (default, free, supports keywords/mode/objective) or " +
+						"'sofya' (250+ site-specific parsers, needs API key). Overrides the configured default.",
 				}),
 			),
 		}),
@@ -276,43 +285,57 @@ export default function (pi: ExtensionAPI) {
 				? params.url
 				: `https://${params.url}`;
 
-			// Build Jina Reader URL
-			const readerUrl = new URL("https://r.jina.ai/" + url);
+			const reader = params.reader ?? config.reader ?? "jina";
 
-			const headers: Record<string, string> = {
-				"Accept": "text/plain",
-			};
+			let content: string;
+			if (reader === "sofya") {
+				// Sofya Fetch: clean markdown via 250+ site-specific parsers.
+				const sofyaKey = resolveBackendKey("sofya", config);
+				if (!sofyaKey) {
+					throw new Error(`Sofya reader selected but no API key configured. ${MISSING_KEY_HELP}`);
+				}
+				const result = await fetchSofya(url, sofyaKey, signal);
+				content = result.content;
+			} else {
+				// Jina Reader: free, supports keywords / mode / objective hints.
+				const readerUrl = new URL("https://r.jina.ai/" + url);
 
-			// Optional Jina API key for higher rate limits (fallback to no-auth)
-			const jinaKey = resolveBackendKey("jina", config);
-			if (jinaKey) {
-				headers["Authorization"] = `Bearer ${jinaKey}`;
+				const headers: Record<string, string> = {
+					"Accept": "text/plain",
+				};
+
+				// Optional Jina API key for higher rate limits (fallback to no-auth)
+				const jinaKey = resolveBackendKey("jina", config);
+				if (jinaKey) {
+					headers["Authorization"] = `Bearer ${jinaKey}`;
+				}
+
+				if (params.fresh) {
+					headers["x-no-cache"] = "true";
+				}
+				if (params.keywords && params.keywords.length > 0) {
+					headers["x-keywords"] = params.keywords.join(", ");
+				}
+				if (params.mode) {
+					headers["x-respond-with"] = params.mode === "rush" ? "text" : "markdown";
+				}
+				if (params.objective) {
+					headers["x-target-selector"] = params.objective;
+				}
+
+				const response = await fetch(readerUrl.toString(), {
+					signal: timeoutSignal(signal),
+					headers,
+				});
+
+				if (!response.ok) {
+					const text = await response.text().catch(() => "");
+					throw new Error(`Failed to read ${url}: ${sanitizeError(response.status, text)}`);
+				}
+
+				content = await response.text();
 			}
 
-			if (params.fresh) {
-				headers["x-no-cache"] = "true";
-			}
-			if (params.keywords && params.keywords.length > 0) {
-				headers["x-keywords"] = params.keywords.join(", ");
-			}
-			if (params.mode) {
-				headers["x-respond-with"] = params.mode === "rush" ? "text" : "markdown";
-			}
-			if (params.objective) {
-				headers["x-target-selector"] = params.objective;
-			}
-
-			const response = await fetch(readerUrl.toString(), {
-				signal: timeoutSignal(signal),
-				headers,
-			});
-
-			if (!response.ok) {
-				const text = await response.text().catch(() => "");
-				throw new Error(`Failed to read ${url}: ${sanitizeError(response.status, text)}`);
-			}
-
-			const content = await response.text();
 			const truncated = content.length > 10000
 				? content.slice(0, 10000) + `\n\n[... truncated, full length: ${content.length} chars]`
 				: content;
@@ -321,6 +344,7 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text: truncated }],
 				details: {
 					url,
+					reader,
 					length: content.length,
 					truncated: content.length > 10000,
 				},

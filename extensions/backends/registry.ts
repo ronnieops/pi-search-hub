@@ -23,6 +23,7 @@ import { searchBraveLLM } from "./brave-llm.js";
 import { searchLinkup } from "./linkup.js";
 import { searchYoucom } from "./youcom.js";
 import { searchFastcrw } from "./fastcrw.js";
+import { searchSofya } from "./sofya.js";
 
 // ---------------------------------------------------------------------------
 // Backend Registry
@@ -227,6 +228,21 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		search: async (query, numResults, { key, signal }) => {
 			const bc = (config.backends as Record<string, BackendConfig> | undefined)?.fastcrw;
 			const result = await searchFastcrw(query, numResults, key!, signal, bc?.baseUrl);
+			return { results: result.results };
+		},
+	},
+	sofya: {
+		needsKey: true,
+		needsKeyFromConfig: false,
+		optionalKey: false,
+		needsInstanceUrl: false,
+		label: "Sofya",
+		setupLabel: "Sofya (search + fetch, full page content)",
+		search: async (query, numResults, { key, signal, backendConfig }) => {
+			const result = await searchSofya(query, numResults, key!, signal, {
+				searchDepth: backendConfig?.searchDepth,
+				topic: backendConfig?.topic,
+			});
 			return { results: result.results };
 		},
 	},

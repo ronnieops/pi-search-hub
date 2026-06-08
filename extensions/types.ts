@@ -27,12 +27,18 @@ export interface BackendConfig {
 	depth?: "standard" | "deep";
 	/** fastCRW-specific: base URL override (for self-hosted). Default: https://api.fastcrw.com */
 	baseUrl?: string;
+	/** Sofya-specific: search depth. "snippets" (1cr, SERP only) or "basic" (3cr, full page content). Default: basic */
+	searchDepth?: "snippets" | "basic";
+	/** Sofya-specific: topic. "general" or "news". Default: general */
+	topic?: "general" | "news";
 }
 
 export interface SearchConfig {
 	defaultBackend?: string;
 	combine?: boolean;
 	selectionStrategy?: "sequential" | "random" | "round-robin" | "best-latency";
+	/** Reader backend for web_read. "jina" (default, free) or "sofya" (250+ site parsers, needs key). */
+	reader?: "jina" | "sofya";
 	/** Cache TTL in milliseconds. Default: 300000 (5 min). Set to 0 to disable. */
 	cacheTtl?: number;
 	/** Max cached queries. Default: 100. */
@@ -54,6 +60,7 @@ export interface SearchConfig {
 		linkup?: BackendConfig;
 		youcom?: BackendConfig;
 		fastcrw?: BackendConfig;
+		sofya?: BackendConfig;
 	};
 }
 

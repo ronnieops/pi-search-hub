@@ -1,7 +1,9 @@
 {
   "defaultBackend": "auto",
+  "reader": "jina",
   "backends": {
     "duckduckgo": { "enabled": true },
+    "sofya": { "enabled": true, "apiKey": "SOFYA_API_KEY", "searchDepth": "basic" },
     "jina": { "enabled": true },
     "marginalia": { "enabled": true },
     "serper": { "enabled": true, "apiKey": "SERPER_API_KEY" },

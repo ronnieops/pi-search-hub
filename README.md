@@ -1,6 +1,6 @@
 # pi-search-hub
 
-Unified web search + content extraction extension for [pi](https://pi.dev) with **12 backend providers** (all working). One `web_search` tool, one `web_read` tool, auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal.
+Unified web search + content extraction extension for [pi](https://pi.dev) with **17 backend providers** (all working). One `web_search` tool, one `web_read` tool (pluggable reader: Jina or Sofya), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal.
 
 ## Installation
 
@@ -53,7 +53,7 @@ Search for "Rust vs Go performance benchmarks" with combine=true to get results 
 ### Read Web Pages
 
 Fetch any URL as clean markdown — great for extracting article content, docs, or reference pages.
-**Note: `web_read` uses [Jina Reader](https://r.jina.ai/) to fetch and convert URLs to markdown.**
+**Note: `web_read` uses [Jina Reader](https://r.jina.ai/) by default. Set `reader` to choose the engine.**
 
 ```text
 Read https://docs.example.com/api-reference
@@ -61,10 +61,11 @@ Read https://docs.example.com/api-reference
 
 The `web_read` tool supports:
 
-- **objective** — CSS selector to target specific content (e.g. "div.article-body")
-- **keywords** — relevant terms to highlight on long pages
-- **mode** — `rush` for speed (return innerText) or `smart` (markdown extraction)
-- **fresh** — bypass cache when freshness matters
+- **reader**: `jina` (default, free, no key) or `sofya` ([Sofya](https://sofya.co) Fetch, 250+ site-specific parsers, needs an API key). Set a project-wide default with `"reader"` in `search.json`, or override per call.
+- **objective**: CSS selector to target specific content (e.g. "div.article-body") _(Jina reader only)_
+- **keywords**: relevant terms to highlight on long pages _(Jina reader only)_
+- **mode**: `rush` for speed (return innerText) or `smart` (markdown extraction) _(Jina reader only)_
+- **fresh**: bypass cache when freshness matters
 
 ## Supported Backends
 
@@ -82,6 +83,11 @@ The `web_read` tool supports:
 | 10  | **WebSearchAPI.ai**   | 2,000 free credits            |   Yes    | [websearchapi.ai](https://www.websearchapi.ai)                    |
 | 11  | **Perplexity Sonar**  | Paid (usage-based)            |   Yes    | [perplexity.ai](https://docs.perplexity.ai)                       |
 | 12  | **SearXNG**           | Self-hosted, unlimited        |  **No**  | [docs.searxng.org](https://docs.searxng.org)                      |
+| 13  | **Brave LLM**         | Shares Brave key & quota      |   Yes    | [brave.com/search/api](https://brave.com/search/api)              |
+| 14  | **Linkup**            | $20 free credit (EU/GDPR)     |   Yes    | [linkup.so](https://www.linkup.so)                                |
+| 15  | **You.com**           | $100 free credits             |   Yes    | [you.com](https://api.you.com)                                    |
+| 16  | **fastCRW**           | 500 free/month, self-hostable |   Yes    | [fastcrw.com](https://www.fastcrw.com)                            |
+| 17  | **Sofya**             | 1,000 credits on GitHub signup |  Yes    | [sofya.co](https://sofya.co)                                      |
 
 > † Marginalia Search uses `public` as a shared API key — no registration required, but subject to a shared rate limit.
 >
@@ -94,6 +100,8 @@ The `web_read` tool supports:
 > **Firecrawl** uses `api.firecrawl.dev/v2/search` with a `data.web[]` response shape. The v1 endpoint is deprecated.
 >
 > **Exa** (March 2026) includes content for the first 10 results per request at no extra cost. Content extraction is enabled by default.
+>
+> **Sofya** ([sofya.co](https://sofya.co)) gives **1,000 free credits when you sign up with GitHub**, and powers both a `web_search` backend and the `web_read` reader from one key. Search uses `POST /v1/search` (`basic` depth returns full extracted page content, ~3 credits; `snippets` returns SERP snippets, 1 credit, set via `searchDepth`). The `web_read` Sofya reader uses `POST /v1/fetch` (1 credit/URL) with 250+ site-specific parsers. Configure depth/topic per backend in `.pi/search.json`.
 
 ## Configuration
 
@@ -105,9 +113,11 @@ Configure backends globally (all projects) or per-project:
 ```json
 {
   "defaultBackend": "auto",
+  "reader": "jina",
   "backends": {
     "duckduckgo": { "enabled": true },
     "jina": { "enabled": true, "apiKey": "JINA_API_KEY" },
+    "sofya": { "enabled": true, "apiKey": "SOFYA_API_KEY", "searchDepth": "basic" },
     "marginalia": { "enabled": true },
     "serper": { "enabled": true, "apiKey": "SERPER_API_KEY" },
     "tavily": { "enabled": true, "apiKey": "TAVILY_API_KEY" },
