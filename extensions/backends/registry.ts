@@ -12,6 +12,7 @@ import { searchMarginalia } from "./marginalia.js";
 import { searchSerper } from "./serper.js";
 import { searchTavily } from "./tavily.js";
 import { searchExa } from "./exa.js";
+import { searchExaMCP } from "./exa-mcp.js";
 import { searchBrave } from "./brave.js";
 import { searchLangSearch } from "./langsearch.js";
 import { searchFirecrawl } from "./firecrawl.js";
@@ -104,9 +105,20 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		setupLabel: "Exa (AI-native, 1000 free/mo)",
 		search: async (query, numResults, { key, signal }) => {
 			const result = await searchExa(query, numResults, key!, signal);
-			return { results: result.results };
+			return { results: result.results, warning: result.warning };
 		},
 	},
+	exa_mcp: {
+		needsKey: false,
+		needsKeyFromConfig: false,
+		optionalKey: false,
+		needsInstanceUrl: false,
+		label: "Exa MCP",
+		setupLabel: "Exa MCP (zero-config, no API key needed)",
+		search: async (query, numResults, { signal }) => {
+			const result = await searchExaMCP(query, numResults, signal);
+			return { results: result.results };
+		},
 	brave: {
 		needsKey: true,
 		needsKeyFromConfig: false,

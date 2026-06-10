@@ -6,7 +6,7 @@
  *   • fetch  (web_read):   POST /v1/fetch, URL(s) to clean markdown (250+ parsers)
  */
 
-import { timeoutSignal, sanitizeError } from "../utils.js";
+import { timeoutSignal, sanitizeError, validateUrl } from "../utils.js";
 import { parseSofya } from "../../backends/parsers.js";
 import type { SearchResult } from "../types.js";
 
@@ -46,12 +46,19 @@ export async function searchSofya(
 /**
  * Fetch a single URL as clean markdown via Sofya Fetch.
  * Returns the extracted content; throws on transport error or per-URL failure.
+ * Includes SSRF guard to block private/internal addresses.
  */
 export async function fetchSofya(
 	url: string,
 	apiKey: string,
 	signal?: AbortSignal,
 ): Promise<{ title: string; url: string; content: string }> {
+	// SSRF guard — block private/internal addresses
+	const ssrfError = validateUrl(url);
+	if (ssrfError) {
+		throw new Error(ssrfError);
+	}
+
 	const response = await fetch(`${SOFYA_BASE}/v1/fetch`, {
 		method: "POST",
 		headers: {

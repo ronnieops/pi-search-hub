@@ -1,8 +1,9 @@
 /**
  * Exa backend — AI-native search, needs API key.
+ * Tracks monthly usage (1000 req/month, warns at 800).
  */
 
-import { timeoutSignal, sanitizeError } from "../utils.js";
+import { timeoutSignal, sanitizeError, checkExaUsage, incrementExaUsage } from "../utils.js";
 import { parseExa } from "../../backends/parsers.js";
 import type { SearchResult } from "../types.js";
 
@@ -11,7 +12,10 @@ export async function searchExa(
 	numResults: number,
 	apiKey: string,
 	signal?: AbortSignal,
-): Promise<{ results: SearchResult[] }> {
+): Promise<{ results: SearchResult[]; warning?: string }> {
+	// Check quota before making request
+	const preWarning = checkExaUsage();
+
 	const body = {
 		query,
 		numResults: Math.min(numResults, 25),
@@ -37,6 +41,13 @@ export async function searchExa(
 		}
 		throw new Error(`Exa ${sanitizeError(response.status, detail)}`);
 	}
+
+	// Increment usage after successful request
+	const postWarning = incrementExaUsage();
+
 	const data = (await response.json()) as Record<string, unknown>;
-	return { results: parseExa(data, numResults) };
+	return {
+		results: parseExa(data, numResults),
+		warning: preWarning || postWarning || undefined,
+	};
 }

@@ -1,5 +1,5 @@
 /**
- * Extension — Unified web search (12 backends) + content extraction (web_read)
+ * Extension — Unified web search (18 backends) + content extraction (web_read)
  *
  * Backends (choose any, all disabled by default):
  *   duckduckgo    — ✅ Free, no key, via Python ddgs lib. Rate-limited.
@@ -8,7 +8,7 @@
  *   serper        — ✅ Google via serper.dev, 2500 free/mo. 667ms
  *   brave         — ✅ Brave Search, 2000 free/mo. 460ms
  *   tavily        — ✅ AI search, 1000 free/mo. 356ms BEST QUALITY
- *   exa           — ✅ AI-native, 10 QPS free tier. 137ms FASTEST
+ *   exa           — ✅ AI-native, 1000 free/mo. 137ms FASTEST
  *   firecrawl     — ✅ Search+crawl, 500 free credits. 644ms
  *   langsearch    — ✅ Free tier, no CC. 1816ms
  *   websearchapi  — ✅ Google-powered, 2000 free credits. 1323ms
@@ -18,6 +18,8 @@
  * Tools: web_search (auto-fallback + RRF combine mode), web_read (URL content)
  * Config: ~/.pi/agent/extensions/search.json + .pi/search.json (project wins)
  * Credentials: env var refs (ALL_CAPS), shell commands (!command), or literal keys
+ *
+ * Statusline activity: Shows "search" status during search operations
  *
  * Example .pi/search.json:
  *   {
@@ -90,7 +92,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			backend: Type.Optional(
-				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa",
+				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa", "exa_mcp",
 					"brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
 					"searxng", "linkup", "youcom", "fastcrw", "sofya", "auto"] as const, {
 					description:
@@ -115,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			refreshConfig(ctx.cwd);
 			const numResults = Math.max(1, Math.min(params.numResults ?? 10, 20));
 			const requestedBackend = params.backend || "auto";
@@ -125,9 +127,28 @@ export default function (pi: ExtensionAPI) {
 			const forceCombine = config.combine === true;
 			const effectiveCombine = forceCombine || combine;
 
+			// Helper to update statusline
+			const setStatus = (status: string) => {
+				ctx.ui.setStatus("search", status);
+				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
+			};
+
 			if (requestedBackend !== "auto") {
 				// Specific backend requested — try it directly
-				const results = await runBackend(requestedBackend, params.query, numResults, signal);
+				const backendLabel = BACKEND_DEFS[requestedBackend]?.label || requestedBackend;
+				setStatus(`🔍 ${backendLabel}: searching...`);
+				try {
+					const results = await runBackend(requestedBackend, params.query, numResults, signal);
+					setStatus(`🔍 ${backendLabel}: ${results.length} results`);
+					return {
+						content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
+						details: { backend: requestedBackend, resultCount: results.length },
+					};
+				} catch (err) {
+					setStatus(`❌ ${backendLabel}: failed`);
+					throw err;
+				}
+			}
 				return {
 					content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
 					details: { backend: requestedBackend, resultCount: results.length },
@@ -139,6 +160,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (effectiveCombine) {
 				// Combine mode: query all enabled backends in parallel
+				setStatus(`🔍 combine: ${activeBackends.length} backends...`);
 				const resultsPerBackend = await Promise.all(
 					activeBackends.map(async (backend) => {
 						try {
@@ -187,6 +209,10 @@ export default function (pi: ExtensionAPI) {
 					? reciprocalRankFusion(successfulBackends, numResults)
 					: [];
 
+				const successCount = successfulBackends.length;
+				const failCount = activeBackends.length - successCount;
+				setStatus(`🔍 combined: ${combined.length} results (${successCount} ok${failCount > 0 ? `, ${failCount} failed` : ""})`);
+
 				return {
 					content: [
 						{
@@ -210,10 +236,13 @@ export default function (pi: ExtensionAPI) {
 				);
 				const errors: string[] = [];
 				for (const backend of orderedBackends) {
+					const backendLabel = BACKEND_DEFS[backend]?.label || backend;
 					const t0 = Date.now();
+					setStatus(`🔍 ${backendLabel}: searching...`);
 					try {
 						const results = await runBackend(backend, params.query, numResults, signal);
 						recordLatency(backend, Date.now() - t0);
+						setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 						return {
 							content: [
 								{
@@ -231,9 +260,11 @@ export default function (pi: ExtensionAPI) {
 						};
 					} catch (err) {
 						errors.push(`${backend}: ${(err as Error).message}`);
+						setStatus(`❌ ${backendLabel}: failed, trying next...`);
 					}
 				}
 
+				setStatus(`❌ all backends failed`);
 				throw new Error(`All backends failed: ${errors.join("; ")}`);
 			}
 		},
@@ -290,14 +321,22 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			refreshConfig(ctx.cwd);
+
+			// Helper to update statusline for web_read
+			const setStatus = (status: string) => {
+				ctx.ui.setStatus("read", status);
+				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
+			};
 
 			const url = params.url.startsWith("https://") || params.url.startsWith("http://")
 				? params.url
 				: `https://${params.url}`;
 
 			const reader = params.reader ?? config.reader ?? "jina";
+			const readerLabel = reader === "sofya" ? "Sofya" : "Jina";
+			setStatus(`📄 ${readerLabel}: fetching...`);
 
 			let content: string;
 			if (reader === "sofya") {
@@ -347,6 +386,8 @@ export default function (pi: ExtensionAPI) {
 
 				content = await response.text();
 			}
+
+			setStatus(`📄 ${readerLabel}: ${content.length} chars`);
 
 			const truncated = content.length > 10000
 				? content.slice(0, 10000) + `\n\n[... truncated, full length: ${content.length} chars]`

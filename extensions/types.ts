@@ -52,6 +52,7 @@ export interface SearchConfig {
 		serper?: BackendConfig;
 		tavily?: BackendConfig;
 		exa?: BackendConfig;
+		exa_mcp?: BackendConfig;
 		brave?: BackendConfig;
 		braveLLM?: BackendConfig;
 		"brave-llm"?: BackendConfig;

@@ -41,7 +41,7 @@ export async function searchDuckDuckGo(
 import json, sys
 try:
     from ddgs import DDGS
-except ImportError:
+except ImportError as e:
     # ddgs may be installed as a uv tool — find it and add to sys.path
     import subprocess, pathlib
     try:
@@ -60,16 +60,28 @@ except ImportError:
                 if found:
                     break
             if not found:
+                print(f"ddgs import failed, path search failed: {e}", file=sys.stderr)
                 sys.exit(1)
-    except Exception:
+    except Exception as ex:
+        print(f"ddgs import failed: {e}, path search failed: {ex}", file=sys.stderr)
         sys.exit(1)
     from ddgs import DDGS
+
 results = []
-with DDGS() as ddgs:
-    kwargs = {"query": ${JSON.stringify(query)}, "max_results": ${numResults}, "backend": ${JSON.stringify(backend)}, "region": ${JSON.stringify(region)}, "safesearch": ${JSON.stringify(safesearch)}}
-    ${timelimit ? `kwargs["timelimit"] = ${JSON.stringify(timelimit)}` : ""}
-    for i, r in enumerate(ddgs.text(**kwargs)):
-        results.append({"title": r.get("title",""), "url": r.get("href",""), "snippet": r.get("body","")})
+error_msg = None
+try:
+    with DDGS() as ddgs:
+        kwargs = {"query": ${JSON.stringify(query)}, "max_results": ${numResults}, "backend": ${JSON.stringify(backend)}, "region": ${JSON.stringify(region)}, "safesearch": ${JSON.stringify(safesearch)}}
+        ${timelimit ? `kwargs["timelimit"] = ${JSON.stringify(timelimit)}` : ""}
+        for i, r in enumerate(ddgs.text(**kwargs)):
+            results.append({"title": r.get("title",""), "url": r.get("href",""), "snippet": r.get("body","")})
+except Exception as ex:
+    error_msg = f"{type(ex).__name__}: {ex}"
+
+if error_msg:
+    print(error_msg, file=sys.stderr)
+    sys.exit(1)
+
 print(json.dumps({"results": results}))
 `;
 
@@ -88,7 +100,7 @@ print(json.dumps({"results": results}))
 		// Timeout timer
 		const timeout = setTimeout(() => {
 			proc.kill();
-			reject(new Error("DuckDuckGo search timed out"));
+			reject(new Error("DuckDuckGo search timed out (30s)"));
 		}, HTTP_TIMEOUT_MS);
 
 		// Abort signal handler
@@ -109,18 +121,21 @@ print(json.dumps({"results": results}))
 				try {
 					resolve(JSON.parse(stdout.trim()));
 				} catch {
-					reject(new Error(`DuckDuckGo search: invalid JSON output: ${stdout.slice(0, 200)}`));
+					reject(new Error(`DuckDuckGo: invalid JSON (exit ${code}): ${stdout.slice(0, 200)}`));
 				}
 			} else {
-				const msg = stderr.trim().slice(0, 300);
-				reject(new Error(`DuckDuckGo search failed (exit ${code}): ${msg || "unknown error"}`));
+				const stderrMsg = stderr.trim();
+				const stdoutSample = stdout.trim().slice(0, 100);
+				// Provide diagnostic info when stderr is empty
+				const diagnostic = stderrMsg || (stdoutSample ? `no stderr, stdout sample: ${stdoutSample}` : "unknown error");
+				reject(new Error(`DuckDuckGo failed (exit ${code}): ${diagnostic}`));
 			}
 		});
 
 		proc.on("error", (err) => {
 			clearTimeout(timeout);
 			if (signal) signal.removeEventListener("abort", onAbort);
-			reject(new Error(`DuckDuckGo search failed: ${err.message}`));
+			reject(new Error(`DuckDuckGo spawn error: ${err.message}`));
 		});
 	});
 }
