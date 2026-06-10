@@ -119,6 +119,7 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 			const result = await searchExaMCP(query, numResults, signal);
 			return { results: result.results };
 		},
+	},
 	brave: {
 		needsKey: true,
 		needsKeyFromConfig: false,

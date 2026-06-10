@@ -149,11 +149,6 @@ export default function (pi: ExtensionAPI) {
 					throw err;
 				}
 			}
-				return {
-					content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
-					details: { backend: requestedBackend, resultCount: results.length },
-				};
-			}
 
 			// Auto mode
 			const activeBackends = getActiveBackends();
