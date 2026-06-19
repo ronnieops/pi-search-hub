@@ -127,7 +127,7 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		optionalKey: false,
 		needsInstanceUrl: false,
 		label: "OpenAI Codex",
-		setupLabel: "OpenAI Codex",
+		setupLabel: "OpenAI Codex (draws from subscription)",
 		search: async (query, numResults, { signal, backendConfig }) => {
 			const result = await searchOpenAICodex(query, numResults, signal, backendConfig);
 			return { results: result.results };
