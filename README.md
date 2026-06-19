@@ -1,6 +1,6 @@
 # pi-search-hub
 
-Unified web search + content extraction extension for [pi](https://pi.dev) with **18 backend providers** (all working). One `web_search` tool, one `web_read` tool (Jina or Sofya reader), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal.
+Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (Jina or Sofya reader), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal.
 
 ## Installation
 
@@ -79,6 +79,7 @@ The `web_read` tool supports:
 | 7   | **Firecrawl**         | 500 free credits              |   Yes    | [firecrawl.dev](https://www.firecrawl.dev)                        |
 | 8   | **Exa**               | 1,000 free queries/month      |   Yes    | [exa.ai](https://dashboard.exa.ai/api-keys)                       |
 | 8.1 | **Exa MCP**           | Unlimited (rate-limited)      |  **No**  | [mcp.exa.ai](https://mcp.exa.ai)                                 |
+| 8.2 | **OpenAI Codex**      | Included with Pi login        |  **No**  | Enable backend, then run `/login` in Pi and select OpenAI Codex  |
 | 9   | **LangSearch**        | Genuinely free, no CC         |   Yes    | [langsearch.com](https://langsearch.com)                          |
 | 10  | **WebSearchAPI.ai**   | 2,000 free credits            |   Yes    | [websearchapi.ai](https://www.websearchapi.ai)                    |
 | 11  | **Perplexity Sonar**  | Paid (usage-based)            |   Yes    | [perplexity.ai](https://docs.perplexity.ai)                       |
@@ -94,6 +95,8 @@ The `web_read` tool supports:
 > † Marginalia Search uses `public` as a shared API key — no registration required, but subject to a shared rate limit.
 >
 > **Jina AI:** Search (`s.jina.ai`) requires a free API key from [jina.ai](https://jina.ai). Content extraction via `web_read` uses Jina Reader (`r.jina.ai`) which is **free and needs no API key**.
+>
+> **OpenAI Codex** uses Pi-managed authentication. Enable `openai-codex` in `search.json`, then run `/login` in Pi and select OpenAI Codex. No `apiKey` is required in `search.json`. You can optionally set `model` (default: `gpt-5.4-mini`).
 >
 > **Perplexity Sonar** supports multiple model variants. Set `model` in your Perplexity backend config to choose: `sonar` (default, fast), `sonar-pro` (higher quality), `sonar-deep-research` (multi-step reasoning), or `sonar-reasoning` (DeepSeek R1-based).
 >
@@ -124,6 +127,7 @@ Configure backends globally (all projects) or per-project:
     "tavily": { "enabled": true, "apiKey": "TAVILY_API_KEY" },
     "brave": { "enabled": true, "apiKey": "BRAVE_API_KEY" },
     "exa": { "enabled": true, "apiKey": "EXA_API_KEY" },
+    "openai-codex": { "enabled": true, "model": "gpt-5.4-mini" },
     "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },
     "langsearch": { "enabled": true, "apiKey": "LANGSEARCH_API_KEY" },
     "websearchapi": { "enabled": true, "apiKey": "WEBSEARCHAPI_API_KEY" },
@@ -175,6 +179,8 @@ export SEARCH_EXA_API_KEY="sk-..."
 
 **To rotate a shell-command key:** Update the secret in your password manager, then trigger a config reload (edit the config file, or wait 10s for automatic refresh).
 
+OpenAI Codex does not use `apiKey` from `search.json`. Enable the backend in config, then run `/login` in Pi and select OpenAI Codex.
+
 Or use the interactive setup:
 
 ```
@@ -225,8 +231,8 @@ RRF assigns each result a score of `Σ(1 / (60 + rank_i))` across all backends t
 ## Testing
 
 ```bash
-# Run unit tests for backend parsers
-npx vitest run backends/parsers.test.ts
+# Run unit tests for backend parsers and OpenAI Codex helpers
+npx vitest run backends/parsers.test.ts extensions/openai-codex.test.ts
 
 # Quick test Jina AI (with your free API key)
 curl -s -H "Authorization: Bearer $JINA_API_KEY" "https://s.jina.ai/?q=test&format=json" | jq .

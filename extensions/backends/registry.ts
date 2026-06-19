@@ -13,6 +13,7 @@ import { searchSerper } from "./serper.js";
 import { searchTavily } from "./tavily.js";
 import { searchExa } from "./exa.js";
 import { searchExaMCP } from "./exa-mcp.js";
+import { searchOpenAICodex } from "./openai-codex.js";
 import { searchBrave } from "./brave.js";
 import { searchLangSearch } from "./langsearch.js";
 import { searchFirecrawl } from "./firecrawl.js";
@@ -117,6 +118,18 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		setupLabel: "Exa MCP (zero-config, no API key needed)",
 		search: async (query, numResults, { signal }) => {
 			const result = await searchExaMCP(query, numResults, signal);
+			return { results: result.results };
+		},
+	},
+	"openai-codex": {
+		needsKey: false,
+		needsKeyFromConfig: false,
+		optionalKey: false,
+		needsInstanceUrl: false,
+		label: "OpenAI Codex",
+		setupLabel: "OpenAI Codex (experimental)",
+		search: async (query, numResults, { signal, backendConfig }) => {
+			const result = await searchOpenAICodex(query, numResults, signal, backendConfig);
 			return { results: result.results };
 		},
 	},
