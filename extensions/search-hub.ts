@@ -1,5 +1,5 @@
 /**
- * Extension — Unified web search (18 backends) + content extraction (web_read)
+ * Extension — Unified web search (19 backends) + content extraction (web_read)
  *
  * Backends (choose any, all disabled by default):
  *   duckduckgo    — ✅ Free, no key, via Python ddgs lib. Rate-limited.
@@ -15,7 +15,7 @@
  *   perplexity    — ✅ Unlimited free Sonar, citation-based answers
  *   searxng       — ✅ Self-hosted, 70+ aggregators. Needs instance URL
  *
- * Tools: web_search (auto-fallback + RRF combine mode), web_read (URL content)
+ * Tools: web_search (auto-fallback + RRF combine modes), web_read (URL content)
  * Config: ~/.pi/agent/extensions/search.json + .pi/search.json (project wins)
  * Credentials: env var refs (ALL_CAPS), shell commands (!command), or literal keys
  *
@@ -51,7 +51,7 @@ import { resolveBackendKey, getKeySource } from "./credentials.js";
 import { fetchSofya } from "./backends/sofya.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
-import { selectBackendsForFallback, reciprocalRankFusion } from "./dispatch.js";
+import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,8 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use web_search when you need up-to-date information, facts, or documentation from the web",
 			"Auto mode tries enabled backends in order (DuckDuckGo is the free fallback)",
-			"Set combine=true to query ALL backends in parallel and merge/deduplicate results",
+			"Set combine=true to query enabled backends in parallel and merge/deduplicate results",
+			"Set combineMode=targeted in search.json to cap combine fan-out while still using multiple backends",
 			"Configure additional backends in .pi/search.json for better quality results",
 		],
 		parameters: Type.Object({
@@ -102,7 +103,8 @@ export default function (pi: ExtensionAPI) {
 			combine: Type.Optional(
 				Type.Boolean({
 					description:
-						"When true, queries ALL enabled backends in parallel and merges/deduplicates results. " +
+						"When true, queries enabled backends in parallel and merges/deduplicates results. " +
+						"Config combineMode controls whether this uses all backends or targeted fan-out. " +
 						"Default is false (fallback mode: uses first successful backend only). " +
 						"Ignored when a specific backend is requested (backend != 'auto').",
 					default: false,
@@ -123,6 +125,7 @@ export default function (pi: ExtensionAPI) {
 			const requestedBackend = params.backend || "auto";
 			const combine = params.combine ?? false;
 			const compact = params.compact ?? config.compact ?? false;
+			const combineMode = config.combineMode ?? "all";
 			// If config has combine:true, force combine mode regardless of LLM choice
 			const forceCombine = config.combine === true;
 			const effectiveCombine = forceCombine || combine;
@@ -154,6 +157,56 @@ export default function (pi: ExtensionAPI) {
 			const activeBackends = getActiveBackends();
 
 			if (effectiveCombine) {
+				if (combineMode === "targeted") {
+					const orderedBackends = selectBackendsForFallback(
+						config.selectionStrategy ?? "sequential",
+						activeBackends,
+					);
+					setStatus(`🔍 targeted combine: up to 3 of ${activeBackends.length} backends...`);
+					const {
+						results: combined,
+						backendStats,
+						usableBackendCount,
+					} = await runTargetedCombine({
+						orderedBackends,
+						query: params.query,
+						numResults,
+						signal,
+						runBackend,
+					});
+
+					if (usableBackendCount === 0) {
+						setStatus(`❌ targeted combine: no usable backends`);
+						const errors = Array.from(backendStats.entries()).map(([backend, stats]) => (
+							stats.success
+								? `${backend}: 0 results`
+								: `${backend}: ${stats.error || "failed"}`
+						));
+						throw new Error(`Targeted combine found no usable backend results: ${errors.join("; ")}`);
+					}
+
+					const attemptedCount = backendStats.size;
+					const incomplete = usableBackendCount < 3 ? `, exhausted after ${usableBackendCount} usable` : "";
+					setStatus(`🔍 targeted combined: ${combined.length} results (${usableBackendCount}/${attemptedCount} usable${incomplete})`);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: compact
+									? formatCombinedResultsCompact(combined)
+									: formatCombinedResults(params.query, combined, backendStats, BACKEND_DEFS),
+							},
+						],
+						details: {
+							backend: "combined-targeted",
+							resultCount: combined.length,
+							usableBackendCount,
+							backendStats: Object.fromEntries(backendStats),
+						},
+					};
+				}
+
 				// Combine mode: query all enabled backends in parallel
 				setStatus(`🔍 combine: ${activeBackends.length} backends...`);
 				const resultsPerBackend = await Promise.all(
@@ -657,6 +710,7 @@ export default function (pi: ExtensionAPI) {
 			["compact", "Compact output", existing.compact ? "On" : "Off"],
 			["showStatus", "Show status line", existing.showStatus !== false ? "On" : "Off"],
 			["combine", "Combine mode (parallel search)", existing.combine ? "On" : "Off"],
+			["combineMode", "Combine strategy", existing.combineMode ?? "all"],
 			["cacheTtl", "Cache TTL (ms)", String(existing.cacheTtl ?? 300000)],
 			["cacheMax", "Max cached queries", String(existing.cacheMax ?? 100)],
 			["reader", "Web reader", existing.reader ?? "jina"],
@@ -692,6 +746,15 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				value = toggle === "On";
+				break;
+			}
+			case "combineMode": {
+				const choice = await ctx.ui.select(`${label} — current: ${selected.split(": ")[1]}`, ["all", "targeted", "Cancel"]);
+				if (choice === "Cancel" || !choice) {
+					ctx.ui.notify("Setup cancelled.", "info");
+					return;
+				}
+				value = choice;
 				break;
 			}
 			case "cacheTtl":
@@ -797,6 +860,7 @@ export default function (pi: ExtensionAPI) {
 				"## Search Backend Status",
 				`Configured default: ${config.defaultBackend || "none"}`,
 				`Resolved default: ${resolvedDefault}`,
+				`Combine mode: ${config.combine ? (config.combineMode || "all") : "off"}`,
 				`Strategy: ${config.selectionStrategy || "sequential"}`,
 				`Active: ${activeBackends.join(", ") || "none"}`,
 				"",

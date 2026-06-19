@@ -36,6 +36,8 @@ export interface BackendConfig {
 export interface SearchConfig {
 	defaultBackend?: string;
 	combine?: boolean;
+	/** Combine strategy when combine is enabled. "all" queries every active backend; "targeted" queries only enough ordered backends to collect up to 3 usable result sets. */
+	combineMode?: "all" | "targeted";
 	selectionStrategy?: "sequential" | "random" | "round-robin" | "best-latency";
 	/** Reader backend for web_read. "jina" (default, free) or "sofya" (250+ site parsers, needs key). */
 	reader?: "jina" | "sofya";

@@ -3,7 +3,9 @@
  */
 
 import type { SearchResult, SearchResultWithBackend } from "./types.js";
-import { config, roundRobinIndex, incrementRoundRobin, latencyMap } from "./config.js";
+
+export type BackendStats = { success: boolean; count: number; error?: string };
+import { roundRobinIndex, incrementRoundRobin } from "./config.js";
 import { scoreBackends } from "./scoring.js";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +40,82 @@ export function selectBackendsForFallback(
 		default:
 			return backends;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Targeted combine
+// ---------------------------------------------------------------------------
+
+export async function runTargetedCombine({
+	orderedBackends,
+	query,
+	numResults,
+	signal,
+	targetUsableBackends = 3,
+	runBackend,
+}: {
+	orderedBackends: string[];
+	query: string;
+	numResults: number;
+	signal?: AbortSignal;
+	targetUsableBackends?: number;
+	runBackend: (backend: string, query: string, numResults: number, signal?: AbortSignal) => Promise<SearchResult[]>;
+}): Promise<{
+	results: SearchResultWithBackend[];
+	backendStats: Map<string, BackendStats>;
+	usableBackendCount: number;
+}> {
+	const backendStats = new Map<string, BackendStats>();
+	const usableBackends: Array<{ backend: string; results: SearchResultWithBackend[] }> = [];
+	const perBackendResults = Math.max(1, Math.ceil(numResults / targetUsableBackends));
+	let cursor = 0;
+
+	while (usableBackends.length < targetUsableBackends && cursor < orderedBackends.length) {
+		const needed = targetUsableBackends - usableBackends.length;
+		const remaining = orderedBackends.length - cursor;
+		const batchSize = Math.min(needed, remaining);
+		const batch = orderedBackends.slice(cursor, cursor + batchSize);
+		cursor += batchSize;
+
+		const batchResults = await Promise.all(
+			batch.map(async (backend) => {
+				try {
+					const results = await runBackend(backend, query, perBackendResults, signal);
+					return {
+						backend,
+						results: results.map((r) => ({ ...r, backend })) as SearchResultWithBackend[],
+						success: true,
+					};
+				} catch (err) {
+					return {
+						backend,
+						results: [] as SearchResultWithBackend[],
+						success: false,
+						error: (err as Error).message,
+					};
+				}
+			}),
+		);
+
+		for (const { backend, results, success, error } of batchResults) {
+			backendStats.set(backend, {
+				success,
+				count: results.length,
+				error,
+			});
+			if (success && results.length > 0) {
+				usableBackends.push({ backend, results });
+			}
+		}
+	}
+
+	return {
+		results: usableBackends.length > 1
+			? reciprocalRankFusion(usableBackends, numResults)
+			: (usableBackends[0]?.results.slice(0, numResults) ?? []),
+		backendStats,
+		usableBackendCount: usableBackends.length,
+	};
 }
 
 // ---------------------------------------------------------------------------

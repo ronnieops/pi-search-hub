@@ -208,12 +208,25 @@ Or use the interactive setup:
 
 ### Combine Mode (`combine=true`)
 
+By default, combine mode uses `combineMode: "all"`:
+
 1. Queries **ALL** enabled backends in parallel
 2. Each backend receives `numResults / numBackends` as a target
 3. Results are merged using **Reciprocal Rank Fusion** (RRF) — position-based scoring that works across incompatible ranking systems
 4. Each result shows its source backend (e.g., `*Source: Tavily*`)
 5. URL dedup prefers the result with the richest content (content > snippet)
 6. Backend statistics are displayed (which succeeded, result counts, errors)
+
+For lower fan-out with multiple sources, set targeted combine in `search.json`:
+
+```json
+{
+  "combine": true,
+  "combineMode": "targeted"
+}
+```
+
+Targeted combine orders active backends using the configured selection strategy, then keeps querying only as many backends as needed to collect up to 3 usable backends. A backend is usable when it returns non-empty results. If fewer than 3 usable backends are available after all active backends are tried, targeted combine returns whatever usable results were found; if none are usable, it reports the collected failures/empty responses.
 
 ### RRF Scoring
 
