@@ -14,7 +14,6 @@ const DEFAULT_SEARCH_CONTEXT_SIZE = "low";
 const MAX_TOOL_RESULTS = 20;
 const MAX_TITLE_LENGTH = 200;
 const MAX_SNIPPET_LENGTH = 1000;
-const MAX_CONTENT_LENGTH = 4000;
 
 const SUBMIT_SEARCH_RESULTS_TOOL = {
 	name: "submit_search_results",
@@ -30,12 +29,8 @@ const SUBMIT_SEARCH_RESULTS_TOOL = {
 				}),
 				snippet: Type.String({
 					description:
-						"One concise sentence with the most query-relevant facts, claims, or details from the available source evidence. Do not write an opinion about usefulness.",
+						"A dense 450-500 character, multi-sentence paragraph with the most query-relevant facts, claims, numbers, dates, caveats, scope limits, and source-specific details from the available source evidence. Prefer completeness and concrete details over brevity while staying within normal search-result display. Shorter is acceptable only when evidence is thin. Do not write an opinion about usefulness.",
 				}),
-				content: Type.Optional(Type.String({
-					description:
-						"Optional. A longer query-relevant summary of the available source evidence with additional concrete details beyond the snippet. Omit if evidence is thin or repetitive. Do not invent or present unsupported text as source content.",
-				})),
 			}),
 			{ maxItems: MAX_TOOL_RESULTS },
 		),
@@ -120,8 +115,7 @@ function buildSystemPrompt(numResults: number): string {
 		`Research the user's query with hosted web_search and call submit_search_results exactly once with at most ${numResults} results.`,
 		"Return only real http/https URLs.",
 		"Prefer primary sources.",
-		"For snippet, write one concise sentence with the most query-relevant facts, claims, or details from the available source evidence.",
-		"For content, optionally add a longer query-relevant summary of the available source evidence; omit it if the evidence is thin or repetitive.",
+		"For snippet, write a dense 450-500 character, multi-sentence paragraph with the most query-relevant facts, claims, numbers, dates, caveats, scope limits, and source-specific details from the available source evidence. Prefer completeness and concrete details over brevity while staying within normal search-result display. Shorter is acceptable only when evidence is thin.",
 		"Do not invent details or present unsupported text as source content.",
 		"No prose.",
 		"No internal references.",
@@ -187,14 +181,14 @@ export function normalizeSearchResult(rawResult: unknown): SearchResult | null {
 
 	const fallbackTitle = safeUrlHostname(url);
 	const title = truncateText(cleanString(rawResult.title) || fallbackTitle, MAX_TITLE_LENGTH);
-	const content = truncateText(cleanString(rawResult.content), MAX_CONTENT_LENGTH);
-	const snippet = truncateText(cleanString(rawResult.snippet) || content, MAX_SNIPPET_LENGTH);
+	const snippet = truncateText(cleanString(rawResult.snippet), MAX_SNIPPET_LENGTH);
+	if (!snippet) return null;
 
 	return {
 		title,
 		url,
-		snippet: snippet || undefined,
-		content: content || undefined,
+		snippet,
+		content: snippet,
 	};
 }
 
