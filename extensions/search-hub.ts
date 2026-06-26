@@ -125,7 +125,14 @@ export default function (pi: ExtensionAPI) {
 			const requestedBackend = params.backend || "auto";
 			const combine = params.combine ?? false;
 			const compact = params.compact ?? config.compact ?? false;
-			const combineMode = config.combineMode ?? "all";
+			const combineMode = (() => {
+				const raw = config.combineMode;
+				if (raw === "all" || raw === "targeted") return raw;
+				if (raw !== undefined) {
+					console.warn(`search-hub: unrecognized combineMode "${raw}", falling back to "all"`);
+				}
+				return "all";
+			})();
 			// If config has combine:true, force combine mode regardless of LLM choice
 			const forceCombine = config.combine === true;
 			const effectiveCombine = forceCombine || combine;
@@ -832,7 +839,10 @@ export default function (pi: ExtensionAPI) {
 					const urlInfo = bc.instanceUrl ? `url: ${bc.instanceUrl}` : "no URL set";
 					rows.push([label, `\u2713 enabled, ${urlInfo}${configured ? `, key: \u2713 (${source})` : ", key: \u2014"}`, avgLatency]);
 				} else if (bc?.enabled) {
-					rows.push([label, `\u2713 enabled, key: \u2713${source ? ` (${source})` : ""}`, avgLatency]);
+					const keyStatus = configured
+						? `\u2713${source ? ` (${source})` : ""}`
+						: "\u2014 (Pi auth)";
+					rows.push([label, `\u2713 enabled, key: ${keyStatus}`, avgLatency]);
 				} else {
 					rows.push([label, `\u2014 disabled${configured ? `, key: \u2713 (${source})` : ""}`, avgLatency]);
 				}

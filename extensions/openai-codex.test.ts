@@ -83,20 +83,20 @@ describe("openai-codex helpers", () => {
 		]);
 	});
 
-	it("normalizeSubmitSearchResults drops invalid URLs, dedupes, and mirrors snippet into content", async () => {
+	it("normalizeSubmitSearchResults drops invalid URLs, dedupes, and falls back to content when snippet missing", async () => {
 		const { normalizeSubmitSearchResults } = await import("./backends/openai-codex.ts");
 
 		const results = normalizeSubmitSearchResults(
 			{
 				results: [
 					{ title: "", url: "example.com", snippet: "Primary source summary", content: "Ignored model content" },
-					{ title: "Content only", url: "https://content-only.example/", content: "Ignored without snippet" },
+					{ title: "Content only", url: "https://content-only.example/", content: "Falls back to content when no snippet" },
 					{ title: "Duplicate", url: "https://example.com/#section", snippet: "duplicate" },
 					{ title: "Bad", url: "javascript:alert(1)", snippet: "ignore me" },
 					{ title: "Docs", url: "https://docs.digitalocean.com/reference/doctl/", snippet: "CLI docs" },
 				],
 			},
-			2,
+			3,
 		);
 
 		expect(results).toEqual([
@@ -105,6 +105,12 @@ describe("openai-codex helpers", () => {
 				url: "https://example.com/",
 				snippet: "Primary source summary",
 				content: "Primary source summary",
+			},
+			{
+				title: "Content only",
+				url: "https://content-only.example/",
+				snippet: "Falls back to content when no snippet",
+				content: "Falls back to content when no snippet",
 			},
 			{
 				title: "Docs",
@@ -133,5 +139,75 @@ describe("openai-codex helpers", () => {
 
 		expect(normalizeSubmitSearchResults({}, 5)).toEqual([]);
 		expect(normalizeSubmitSearchResults({ results: "not-an-array" }, 5)).toEqual([]);
+	});
+
+	it("normalizeSubmitSearchResults drops results with neither snippet nor content", async () => {
+		const { normalizeSubmitSearchResults } = await import("./backends/openai-codex.ts");
+
+		const results = normalizeSubmitSearchResults(
+			{
+				results: [
+					{ title: "No text", url: "https://example.com/no-text" },
+					{ title: "Has snippet", url: "https://example.com/has-snippet", snippet: "valid" },
+					{ title: "Empty snippet", url: "https://example.com/empty-snippet", snippet: "", content: "" },
+				],
+			},
+			5,
+		);
+
+		expect(results).toHaveLength(1);
+		expect(results[0].url).toBe("https://example.com/has-snippet");
+	});
+});
+
+describe("openai-codex URL helpers", () => {
+	it("normalizeHttpUrl prepends https for bare domains", async () => {
+		const { normalizeHttpUrl } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeHttpUrl("example.com")).toBe("https://example.com/");
+		expect(normalizeHttpUrl("docs.example.com/path")).toBe("https://docs.example.com/path");
+	});
+
+	it("normalizeHttpUrl rejects non-http protocols", async () => {
+		const { normalizeHttpUrl } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeHttpUrl("javascript:alert(1)")).toBeUndefined();
+		expect(normalizeHttpUrl("ftp://example.com")).toBeUndefined();
+		expect(normalizeHttpUrl("file:///etc/passwd")).toBeUndefined();
+	});
+
+	it("normalizeHttpUrl strips hash fragments", async () => {
+		const { normalizeHttpUrl } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeHttpUrl("https://example.com/page#section")).toBe("https://example.com/page");
+	});
+
+	it("normalizeHttpUrl returns undefined for empty or whitespace input", async () => {
+		const { normalizeHttpUrl } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeHttpUrl("")).toBeUndefined();
+		expect(normalizeHttpUrl("   ")).toBeUndefined();
+	});
+
+	it("normalizeUrlForDedup normalizes trailing slash and case", async () => {
+		const { normalizeUrlForDedup } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeUrlForDedup("https://Example.COM/Page/")).toBe("https://example.com/page");
+		expect(normalizeUrlForDedup("https://example.com/page")).toBe("https://example.com/page");
+	});
+
+	it("normalizeUrlForDedup strips hash fragments", async () => {
+		const { normalizeUrlForDedup } = await import("./backends/openai-codex.ts");
+
+		expect(normalizeUrlForDedup("https://example.com/page#section")).toBe("https://example.com/page");
+	});
+
+	it("looksLikeDomainOrPath matches domain-like strings", async () => {
+		const { looksLikeDomainOrPath } = await import("./backends/openai-codex.ts");
+
+		expect(looksLikeDomainOrPath("example.com")).toBe(true);
+		expect(looksLikeDomainOrPath("sub.example.com/path/to/page")).toBe(true);
+		expect(looksLikeDomainOrPath("localhost")).toBe(false);
+		expect(looksLikeDomainOrPath("justaword")).toBe(false);
 	});
 });

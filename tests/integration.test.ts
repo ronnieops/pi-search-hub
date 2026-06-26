@@ -212,6 +212,62 @@ describe("runTargetedCombine", () => {
 		expect(result.backendStats.get("b")).toMatchObject({ success: true, count: 0 });
 		expect(result.backendStats.get("c")).toMatchObject({ success: false, count: 0, error: "c failed" });
 	});
+
+	it("returns empty when all backends fail", async () => {
+		const result = await runTargetedCombine({
+			orderedBackends: ["a", "b"],
+			query: "test query",
+			numResults: 10,
+			runBackend: async () => { throw new Error("fail"); },
+		});
+
+		expect(result.usableBackendCount).toBe(0);
+		expect(result.results).toEqual([]);
+	});
+
+	it("returns empty when orderedBackends is empty", async () => {
+		const result = await runTargetedCombine({
+			orderedBackends: [],
+			query: "test query",
+			numResults: 10,
+			runBackend: async () => [],
+		});
+
+		expect(result.usableBackendCount).toBe(0);
+		expect(result.results).toEqual([]);
+	});
+
+	it("distributes numResults across targetUsableBackends", async () => {
+		const calls: number[] = [];
+		await runTargetedCombine({
+			orderedBackends: ["a", "b", "c"],
+			query: "test query",
+			numResults: 9,
+			targetUsableBackends: 3,
+			runBackend: async (_, __, numResults) => {
+				calls.push(numResults);
+				return [{ title: "x", url: "https://x.com", snippet: "x" }];
+			},
+		});
+
+		expect(calls).toEqual([3, 3, 3]);
+	});
+
+	it("uses single backend results directly without RRF", async () => {
+		const result = await runTargetedCombine({
+			orderedBackends: ["a", "b"],
+			query: "test query",
+			numResults: 10,
+			runBackend: async (backend) => {
+				if (backend === "a") return resultFor(backend);
+				throw new Error("b fail");
+			},
+		});
+
+		expect(result.usableBackendCount).toBe(1);
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0].backend).toBe("a");
+	});
 });
 
 // ---------------------------------------------------------------------------

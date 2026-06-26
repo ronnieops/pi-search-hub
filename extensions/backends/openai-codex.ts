@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
+import { timeoutSignal } from "../utils.js";
 import type { BackendConfig, SearchResult } from "../types.js";
 
 const DEFAULT_MODEL_ID = "gpt-5.4-mini";
@@ -68,7 +69,7 @@ export async function searchOpenAICodex(
 
 	const message = await streamOpenAICodexResponses(model, context, {
 		apiKey,
-		signal,
+		signal: timeoutSignal(signal),
 		transport: "sse",
 		reasoningEffort: "minimal",
 		textVerbosity: "low",
@@ -182,17 +183,19 @@ export function normalizeSearchResult(rawResult: unknown): SearchResult | null {
 	const fallbackTitle = safeUrlHostname(url);
 	const title = truncateText(cleanString(rawResult.title) || fallbackTitle, MAX_TITLE_LENGTH);
 	const snippet = truncateText(cleanString(rawResult.snippet), MAX_SNIPPET_LENGTH);
-	if (!snippet) return null;
+	const content = truncateText(cleanString(rawResult.content), MAX_SNIPPET_LENGTH);
+	const display = snippet || content;
+	if (!display) return null;
 
 	return {
 		title,
 		url,
-		snippet,
-		content: snippet,
+		snippet: display,
+		content: display,
 	};
 }
 
-function normalizeHttpUrl(value: unknown): string | undefined {
+export function normalizeHttpUrl(value: unknown): string | undefined {
 	const input = cleanString(value);
 	if (!input) return undefined;
 
@@ -214,7 +217,7 @@ function normalizeHttpUrl(value: unknown): string | undefined {
 	}
 }
 
-function normalizeUrlForDedup(url: string): string {
+export function normalizeUrlForDedup(url: string): string {
 	try {
 		const normalized = new URL(url);
 		normalized.hash = "";
@@ -245,7 +248,7 @@ function hasUrlScheme(value: string): boolean {
 	return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value);
 }
 
-function looksLikeDomainOrPath(value: string): boolean {
+export function looksLikeDomainOrPath(value: string): boolean {
 	return /^[^\s/]+\.[^\s]+(?:\/.*)?$/.test(value);
 }
 
