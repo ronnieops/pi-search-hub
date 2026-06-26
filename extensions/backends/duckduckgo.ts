@@ -42,6 +42,10 @@ import json, sys
 try:
     from ddgs import DDGS
 except ImportError as e:
+    # Detect missing ddgs specifically — give actionable install instructions
+    if "ddgs" in str(e):
+        print("DuckDuckGo backend requires the ddgs Python package. Install with: pip3 install ddgs", file=sys.stderr)
+        sys.exit(1)
     # ddgs may be installed as a uv tool — find it and add to sys.path
     import subprocess, pathlib
     try:

@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { reciprocalRankFusion, runTargetedCombine, selectBackendsForFallback } from "../extensions/dispatch.js";
+import { recordBackendSuccess, recordBackendFailure } from "../extensions/scoring.js";
 import { resolveConfigValue, clearCredentialCache } from "../extensions/credentials.js";
 import { loadConfig } from "../extensions/config.js";
 import { SearchCache } from "../extensions/utils.js";
@@ -289,6 +290,15 @@ describe("selectBackendsForFallback", () => {
 		for (const b of backends) {
 			expect(result).toContain(b);
 		}
+		// Verify some reordering happens across multiple calls (distribution check)
+		const results: string[][] = [];
+		for (let i = 0; i < 20; i++) {
+			results.push(selectBackendsForFallback("random", [...backends]));
+		}
+		// At least one call should differ from the first result — confirms shuffling
+		const first = JSON.stringify(results[0]);
+		const shuffled = results.some((r) => JSON.stringify(r) !== first);
+		expect(shuffled).toBe(true);
 	});
 
 	it("round-robin rotates starting backend", () => {
@@ -296,13 +306,39 @@ describe("selectBackendsForFallback", () => {
 
 		// Call multiple times — the first element should rotate
 		const firsts = new Set<string>();
-		for (let i = 0; i < 6; i++) {
+		for (let i = 0; i < 12; i++) {
 			const result = selectBackendsForFallback("round-robin", backends);
 			firsts.add(result[0]);
 		}
 
-		// With 3 backends and 6 calls, should see at least 2 different first backends
-		expect(firsts.size).toBeGreaterThanOrEqual(2);
+		// With 3 backends and 12 calls, should see all 3 backends as first
+		expect(firsts.size).toBe(3);
+	});
+
+	it("best-latency returns backends sorted by score", () => {
+		const backends = ["slow-backend", "fast-backend", "broken-backend"];
+
+		// Fast backend: fast + successful
+		recordBackendSuccess("fast-backend", 100, 10, 10);
+		// Slow backend: slow but successful
+		recordBackendSuccess("slow-backend", 5000, 10, 10);
+		// Broken backend: all failures
+		recordBackendFailure("broken-backend");
+		recordBackendFailure("broken-backend");
+
+		const result = selectBackendsForFallback("best-latency", backends);
+
+		// Should return all backends in score order (best first)
+		expect(result).toHaveLength(3);
+		// Fast backend should be first
+		expect(result[0]).toBe("fast-backend");
+		// Broken backend should be last
+		expect(result[2]).toBe("broken-backend");
+	});
+
+	it("round-robin with empty backends returns empty array", () => {
+		const result = selectBackendsForFallback("round-robin", []);
+		expect(result).toEqual([]);
 	});
 
 	it("does not mutate original array", () => {
@@ -431,6 +467,32 @@ describe("fetchSofya", () => {
 		expect(result.content).toBe("Page content here");
 		expect(result.title).toBe("Example");
 	});
+
+	it("sends include_raw_html:false by default", async () => {
+		fetchSpy.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				results: [{ success: true, url: "https://example.com", content: "x" }],
+			}),
+		} as Response);
+
+		await fetchSofya("https://example.com", "valid-key");
+		const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+		expect(body.include_raw_html).toBe(false);
+	});
+
+	it("sends include_raw_html:true when opts.includeRawHtml set", async () => {
+		fetchSpy.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				results: [{ success: true, url: "https://example.com", content: "<html>x</html>" }],
+			}),
+		} as Response);
+
+		await fetchSofya("https://example.com", "valid-key", undefined, { includeRawHtml: true });
+		const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+		expect(body.include_raw_html).toBe(true);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -449,15 +511,15 @@ describe("SearchCache", () => {
 		expect(cache.get("missing")).toBeUndefined();
 	});
 
-	it("evicts entries after TTL", () => {
-		const cache = new SearchCache<string>(1, 10); // 1ms TTL
+	it("evicts entries after TTL", async () => {
+		const cache = new SearchCache<string>(20, 10); // 20ms TTL
 		cache.set("key1", "value1");
-		return new Promise<void>((resolve) => {
-			setTimeout(() => {
-				expect(cache.get("key1")).toBeUndefined();
-				resolve();
-			}, 10);
-		});
+		// Verify entry exists just before TTL expires
+		await new Promise((r) => setTimeout(r, 15));
+		expect(cache.get("key1")).toBe("value1"); // still valid at 15ms < 20ms TTL
+		// Verify entry is evicted after TTL
+		await new Promise((r) => setTimeout(r, 10)); // now at 25ms > 20ms TTL
+		expect(cache.get("key1")).toBeUndefined();
 	});
 
 	it("evicts oldest when at max capacity", () => {

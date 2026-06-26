@@ -152,3 +152,27 @@ export async function searchExaMCP(
 		},
 	});
 }
+
+/**
+ * Fetch a single URL as clean content via Exa MCP web_fetch_exa tool.
+ * Zero-config — no API key needed (rate-limited free plan).
+ * Docs: https://exa.ai/docs/reference/exa-mcp
+ */
+export async function fetchExaMCP(
+	url: string,
+	signal?: AbortSignal,
+): Promise<{ title: string; url: string; content: string }> {
+	const result = await callMCP("tools/call", {
+		name: "web_fetch_exa",
+		arguments: { url },
+	});
+	const first = result.results[0];
+	if (!first) {
+		throw new Error(`Exa MCP fetch returned no content for ${url}`);
+	}
+	return {
+		title: first.title || "",
+		url: first.url || url,
+		content: first.content || first.snippet || "",
+	};
+}

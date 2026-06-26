@@ -3,6 +3,7 @@
  */
 
 import { join } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -139,7 +140,6 @@ function getCurrentMonthStart(): string {
 
 function readUsage(): ExaUsageRecord {
 	try {
-		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		const data = readFileSync(getUsageFilePath(), "utf-8");
 		return JSON.parse(data) as ExaUsageRecord;
 	} catch {
@@ -149,7 +149,6 @@ function readUsage(): ExaUsageRecord {
 
 function writeUsage(record: ExaUsageRecord): void {
 	try {
-		const { writeFileSync, mkdirSync } = require("node:fs") as typeof import("node:fs");
 		const dir = getAgentDir();
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(getUsageFilePath(), JSON.stringify(record, null, 2));

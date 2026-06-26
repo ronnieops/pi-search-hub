@@ -8,8 +8,6 @@
  * - quality_score: average result count as fraction of requested
  */
 
-import type { BackendConfig } from "./types.js";
-
 // ---------------------------------------------------------------------------
 // Score tracking
 // ---------------------------------------------------------------------------

@@ -1,3 +1,110 @@
+# Release v2.7.1
+
+## Bug Fixes
+- **24 TypeScript compilation errors resolved.** `config.ts` had implicit `any` on backends index (5 errors), `tls-fingerprint.ts` had type mismatches on `Headers` vs `Record` union (10 errors), `content-negotiation.ts` had implicit `any` callback params (4 errors), `duckduckgo.test.ts` had mock type issues (5 errors). All fixed.
+- **3 unused imports removed.** `BackendConfig` from `scoring.ts`, `timeoutSignal` from `gfm-support.ts`, `latencyMap` from `dispatch.ts`.
+- **Duplicate SSRF guard removed from `sofya.ts`.** Caller (`web_read`) already validates — defense-in-depth was running validation twice.
+- **Duplicate Exa quota check removed from `exa.ts`.** `checkExaUsage()` was called before every request, but `incrementExaUsage()` already handles the check internally. Warning was returned twice.
+- **`require()` replaced with ESM imports in `utils.ts`.** Last 2 `require()` calls in production code now use top-level ESM imports. Zero `require()` calls remain.
+
+## Maintenance
+- **7 dead-code modules removed (~3,500 lines).** `cache-system`, `tool-persistence`, `gfm-support`, `content-negotiation`, `sibling-probe`, `spillover`, `tls-fingerprint` — all fully implemented and tested but never imported by the main extension. Reduces maintenance surface significantly.
+
+## Stats
+- 0 TypeScript errors (was 24)
+- 143 tests passing (8 test files)
+- 0 `require()` calls in production code
+- ~3,500 lines removed
+
+---
+
+# Release v2.6.1
+
+## Bug Fixes
+- **runBackend had orphaned try block.** The v2.5.0 scoring-wiring change added an inner `try/catch/finally` around `def.search()` but left a stray outer `try {` wrapping key/URL resolution. The orphaned try had no catch/finally and shadowed a `const key` declaration, causing TypeScript error TS1472 at registry.ts:328. Vitest uses esbuild for transforms (no type checking), so this was silent in CI. Removed the outer try and inlined the `cacheKey()` call to avoid the variable conflict.
+
+---
+
+# Release v2.6.0
+
+## Bug Fixes
+- **persist() omitted staleAt from serialized cache entries.** Cache entries saved to disk were missing the `staleAt` field. On reload, the stale window was recomputed as `expiresAt + (ttlMs * staleMultiplier)`, drifting forward if `ttlMs` or `staleMultiplier` differed between processes. Fixed by adding `staleAt: v.staleAt` to the persist serialization map.
+- **round-robin with empty backends returned `[undefined]`.** When `selectBackendsForFallback("round-robin", [])` was called, `backends.length === 0` caused `NaN` index (`roundRobinIndex % 0`), returning `undefined` as the first element. Added an early guard: `if (backends.length === 0) return []`.
+
+## Tests
+- **speedScore=0 clamping now asserted.** The "very slow backends" test in scoring.test.ts recorded 10s latency but only asserted `avgLatency`. Now also asserts `compositeScore ≈ 0.6` and verifies a fast backend scores higher than the slow one.
+- **best-latency dispatch integration test added.** `selectBackendsForFallback("best-latency", ...)` now exercised in the integration suite, verifying fast backend ranks first, broken backend last.
+- **round-robin threshold strengthened.** Integration test now uses 12 calls instead of 6, requiring all 3 backends to appear as first element.
+- **262/262 tests passing** (13 files, up from 260/260).
+
+## Maintenance
+- **Window reset test notes code-inspection approach.** Full time-progression testing of the 60s window reset requires fake timers that reliably patch `Date.now()` across ESM module boundaries in Vitest. A code-inspection comment documents the correct reset logic in scoring.ts.
+
+---
+
+# Release v2.5.0 (Correctness & Test Coverage)
+
+## Bug Fixes
+- **Cache stale expiry calculation was catastrophically wrong.** BackendCache computed staleExpiry = expiresAt * staleMultiplier (multiplying an absolute Unix timestamp by 2), producing a date in 2106. This made the stale window effectively infinite -- stale entries were never evicted, prune() never removed anything, and load() loaded all expired entries from disk. Fixed by storing a dedicated staleAt timestamp at entry-creation time and comparing now < entry.staleAt consistently. Memory leak on long-running processes resolved.
+- **DuckDuckGo cryptic error when ddgs Python package missing.** When ddgs import failed, users saw an opaque ModuleNotFoundError with no actionable guidance. Now the Python script detects the missing module specifically and prints: Install ddgs: pip3 install ddgs.
+- **best-latency selection strategy was dead code.** recordBackendSuccess and recordBackendFailure in scoring.ts were defined but never called, so the composite scoring subsystem always returned 0.5 for every backend. Now wired into runBackend() in the registry.
+
+## Tests
+- **New scoring.test.ts** -- 10 test cases covering all scoring.ts functions: running average convergence, success/failure recording, window reset, speed clamping, composite scoring, getBestBackends edge cases.
+- **New duckduckgo.test.ts** -- 11 test cases covering the Python subprocess backend: successful search, spawn error, missing ddgs module, exception stderr, non-zero exit, malformed JSON, timeout, abort signal, options injection, platform detection.
+- **Improved integration.test.ts** -- TTL eviction test now verifies entry exists before TTL expires. Random selection test now verifies actual shuffling across 20 calls.
+
+## Maintenance
+- **sibling-probe.ts**: Removed duplicate timeoutSignal() function, now imported from utils.js.
+- **FALLBACK_ENV_MAP**: Added brave-llm, youcom, linkup, fastcrw convenience env var fallbacks.
+- **README**: Removed stale Firecrawl curl comment referencing v1.
+
+## Stats
+- 260 tests (up from 236), 13 test files (up from 11)
+
+---
+
+# Release v2.4.0 (Firecrawl Keyless)
+
+## 🚀 New Features
+- **Firecrawl Keyless mode** — `apiKey` is now optional on the Firecrawl backend. Firecrawl launched hosted keyless access on 2026-06-16 (1,000 free credits/month, no `Authorization` header required). The backend now runs zero-config like Jina and Marginalia; bring your own key only for higher volume.
+  - `searchFirecrawl()`: `apiKey` param optional, `Authorization: Bearer` header attached only when a key is present.
+  - Registry flipped to `optionalKey: true`; setup label updated to reflect the keyless tier.
+  - New test for the headerless request path.
+  - README tier table updated: Firecrawl now "No" key required, 1k keyless credits/mo.
+
+## 🔁 Reverts / Corrected Decisions
+- **Issue #18 reopened and resolved.** Previously closed as "not planned" on the rationale that the hosted Firecrawl API required a key on every request. Firecrawl Keyless invalidated that assumption; the fix shipped in this release.
+- **PR #20 closed** (superseded). It guarded the `Authorization` header but left `apiKey` required, so keyless wouldn't work end-to-end through the registry's `MISSING_KEY_HELP` gate. Credit to @CoderTCY for both the original report and the PR.
+
+## 📊 Stats
+- 18 backends total (Firecrawl now keyless-capable)
+- 236 tests passing (was 235)
+
+---
+
+# Release v2.3.3 (Bug fix release)
+
+## 🐛 Fixes
+- Fixed duplicate `configDir` variable in setup menu.
+
+## 📊 Stats
+- 18 backends total
+- 228 tests passing
+
+---
+
+# Release v2.3.2 (Bug fix release)
+
+## 🐛 Fixes
+- Fixed duplicate `option` variable in setup menu that caused parse error.
+
+## 📊 Stats
+- 18 backends total
+- 228 tests passing
+
+---
+
 # Release v2.3.1 (Bug fix release)
 
 ## 🐛 Fixes

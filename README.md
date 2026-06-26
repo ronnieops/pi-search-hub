@@ -1,6 +1,6 @@
 # pi-search-hub
 
-Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (Jina or Sofya reader), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal.
+Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (Jina or Sofya reader), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal. Firecrawl supports **keyless mode** (1,000 free credits/month, no API key required).
 
 ## Installation
 
@@ -76,7 +76,7 @@ The `web_read` tool supports:
 | 4   | **Tavily**            | 1,000 calls/month             |   Yes    | [tavily.com](https://tavily.com)                                  |
 | 5   | **Serper** (Google)   | 2,500 free queries (one-time) |   Yes    | [serper.dev](https://serper.dev)                                  |
 | 6   | **Brave**             | 2,000 queries/month           |   Yes    | [brave.com/search/api](https://brave.com/search/api)              |
-| 7   | **Firecrawl**         | 500 free credits              |   Yes    | [firecrawl.dev](https://www.firecrawl.dev)                        |
+| 7   | **Firecrawl**         | 1,000 keyless credits/mo      | **No**   | [firecrawl.dev](https://www.firecrawl.dev)                        |
 | 8   | **Exa**               | 1,000 free queries/month      |   Yes    | [exa.ai](https://dashboard.exa.ai/api-keys)                       |
 | 8.1 | **Exa MCP**           | Unlimited (rate-limited)      |  **No**  | [mcp.exa.ai](https://mcp.exa.ai)                                 |
 | 8.2 | **OpenAI Codex**      | Included with Pi login        |  **No**  | Enable backend, then run `/login` in Pi and select OpenAI Codex  |
@@ -128,7 +128,7 @@ Configure backends globally (all projects) or per-project:
     "brave": { "enabled": true, "apiKey": "BRAVE_API_KEY" },
     "exa": { "enabled": true, "apiKey": "EXA_API_KEY" },
     "openai-codex": { "enabled": true, "model": "gpt-5.4-mini" },
-    "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },
+    "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },  // apiKey optional — works keyless (1k credits/mo)
     "langsearch": { "enabled": true, "apiKey": "LANGSEARCH_API_KEY" },
     "websearchapi": { "enabled": true, "apiKey": "WEBSEARCHAPI_API_KEY" },
     "perplexity": {
@@ -244,7 +244,11 @@ RRF assigns each result a score of `Σ(1 / (60 + rank_i))` across all backends t
 ## Testing
 
 ```bash
-# Run unit tests for backend parsers and OpenAI Codex helpers
+```bash
+# Run all tests
+npx vitest run
+
+# Run specific test files
 npx vitest run backends/parsers.test.ts extensions/openai-codex.test.ts
 
 # Quick test Jina AI (with your free API key)
@@ -262,7 +266,7 @@ curl -X POST "https://api.perplexity.ai/chat/completions" \
   -H "Authorization: Bearer $KEY" \
   -d '{"model": "sonar", "messages": [{"role": "user", "content": "test"}], "search_context_size": "low"}'
 
-# Quick test Firecrawl (v2 endpoint — code still uses v1)
+# Quick test Firecrawl (v2 endpoint)
 curl -X POST "https://api.firecrawl.dev/v2/search" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KEY" \

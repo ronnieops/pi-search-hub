@@ -39,8 +39,8 @@ export interface SearchConfig {
 	/** Combine strategy when combine is enabled. "all" queries every active backend; "targeted" queries only enough ordered backends to collect up to 3 usable result sets. */
 	combineMode?: "all" | "targeted";
 	selectionStrategy?: "sequential" | "random" | "round-robin" | "best-latency";
-	/** Reader backend for web_read. "jina" (default, free) or "sofya" (250+ site parsers, needs key). */
-	reader?: "jina" | "sofya";
+	/** Reader backend for web_read. "jina" (default, free), "sofya" (250+ site parsers, needs key), "firecrawl" (keyless, 1000 credits/mo), "exa" (needs key, 1000 req/mo), or "exa_mcp" (zero-config, rate-limited). */
+	reader?: "jina" | "sofya" | "firecrawl" | "exa" | "exa_mcp";
 	/** Show status line with enabled backends. Default: true. Set to false to hide. */
 	showStatus?: boolean;
 	/** Cache TTL in milliseconds. Default: 300000 (5 min). Set to 0 to disable. */
@@ -70,6 +70,7 @@ export interface SearchConfig {
 		youcom?: BackendConfig;
 		fastcrw?: BackendConfig;
 		sofya?: BackendConfig;
+		[key: string]: BackendConfig | undefined;
 	};
 }
 

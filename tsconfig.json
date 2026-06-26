@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"noEmit": true,
+		"types": ["node"],
+		"typeRoots": ["./types", "./node_modules/@types"]
+	},
+	"include": [
+		"extensions/**/*.ts",
+		"backends/**/*.ts",
+		"tests/**/*.ts",
+		"types/**/*.d.ts"
+	],
+	"exclude": [
+		"node_modules"
+	]
+}

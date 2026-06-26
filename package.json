@@ -1,7 +1,7 @@
 {
   "name": "pi-search-hub",
-  "version": "2.3.3",
-  "description": "Unified web search + content extraction extension for pi with 19 backends (DuckDuckGo, Jina AI, Tavily, Brave, Brave LLM, Exa, Exa MCP, OpenAI Codex, Serper, Firecrawl, fastCRW, Marginalia, LangSearch, Linkup, Perplexity Sonar, SearXNG, WebSearchAPI, You.com, Sofya). Auto-fallback, RRF combine mode, pluggable web_read reader (Jina or Sofya), secure credential resolution.",
+  "version": "2.7.1",
+  "description": "Unified web search + content extraction extension for pi with 19 backends (DuckDuckGo, Jina AI, Tavily, Brave, Brave LLM, Exa, Exa MCP, OpenAI Codex, Serper, Firecrawl [keyless], fastCRW, Marginalia, LangSearch, Linkup, Perplexity Sonar, SearXNG, WebSearchAPI, You.com, Sofya). Auto-fallback, RRF combine mode, pluggable web_read reader (Jina or Sofya), secure credential resolution.",
   "keywords": [
     "pi-package",
     "pi",
@@ -33,6 +33,10 @@
   "author": "",
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "bugs": {
     "url": "https://github.com/ronnieops/pi-search-hub/issues"
   },
