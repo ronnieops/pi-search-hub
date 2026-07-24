@@ -197,4 +197,43 @@ describe("fetchWithFallback", () => {
 		const { DEFAULT_READER_FALLBACK } = await import("../extensions/readers/dispatch.js");
 		expect(DEFAULT_READER_FALLBACK).toEqual(["jina", "sofya", "firecrawl", "exa", "exa_mcp"]);
 	});
+
+	it("respects custom fallback order: Firecrawl first, then Jina", async () => {
+		mockFetchWithReader
+			.mockRejectedValueOnce(new Error("Failed to read: API error (422): No content"))
+			.mockResolvedValueOnce(makeResult("hello from jina", "jina"));
+
+		const { fetchWithFallback } = await import("../extensions/readers/dispatch.js");
+		const result = await fetchWithFallback(
+			"https://example.com",
+			["firecrawl", "jina"],
+			{},
+			undefined,
+			MINIMAL_CONFIG,
+		);
+
+		// Firecrawl tried first, failed; Jina tried second, succeeded
+		expect(result.content).toBe("hello from jina");
+		expect(result.reader).toBe("jina");
+		expect(mockFetchWithReader).toHaveBeenCalledTimes(2);
+		expect(mockFetchWithReader).toHaveBeenNthCalledWith(1, "https://example.com", "firecrawl", {}, undefined, MINIMAL_CONFIG);
+		expect(mockFetchWithReader).toHaveBeenNthCalledWith(2, "https://example.com", "jina", {}, undefined, MINIMAL_CONFIG);
+	});
+
+	it("single-entry fallback never falls through", async () => {
+		mockFetchWithReader.mockRejectedValueOnce(new Error("Failed to read: API error (422): No content"));
+
+		const { fetchWithFallback } = await import("../extensions/readers/dispatch.js");
+		await expect(
+			fetchWithFallback(
+				"https://example.com",
+				["jina"],
+				{},
+				undefined,
+				MINIMAL_CONFIG,
+			),
+		).rejects.toThrow(/All readers failed: jina/);
+
+		expect(mockFetchWithReader).toHaveBeenCalledTimes(1);
+	});
 });

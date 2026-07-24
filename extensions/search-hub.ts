@@ -705,6 +705,7 @@ export default function (pi: ExtensionAPI) {
 			["cacheTtl", "Cache TTL (ms)", String(existing.cacheTtl ?? 300000)],
 			["cacheMax", "Max cached queries", String(existing.cacheMax ?? 100)],
 			["reader", "Web reader", existing.reader ?? "jina"],
+			["readerFallback", "Reader fallback order", (existing.readerFallback ?? DEFAULT_READER_FALLBACK).join(", ")],
 			["selectionStrategy", "Selection strategy", existing.selectionStrategy ?? "sequential"],
 		];
 
@@ -759,6 +760,39 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				value = parseInt(input, 10);
+				break;
+			}
+			case "readerFallback": {
+				const current = existing.readerFallback ?? DEFAULT_READER_FALLBACK;
+				const choice = await ctx.ui.select(`${label} — current: ${current.join(", ")}`, [
+					"Default (jina, sofya, firecrawl, exa, exa_mcp)",
+					"Custom order",
+					"Cancel",
+				]);
+				if (choice === "Cancel" || !choice) {
+					ctx.ui.notify("Setup cancelled.", "info");
+					return;
+				}
+				if (choice === "Default (jina, sofya, firecrawl, exa, exa_mcp)") {
+					value = undefined; // removes override, uses default
+				} else {
+					const input = await ctx.ui.input("Enter reader order (comma-separated, e.g. firecrawl, jina, sofya):", {
+						placeholder: current.join(", "),
+						validate: (v: string) => {
+							const parts = v.split(",").map(s => s.trim()).filter(Boolean);
+							if (parts.length === 0) return "At least one reader required";
+							const valid = ["jina", "sofya", "firecrawl", "exa", "exa_mcp"];
+							const invalid = parts.filter(p => !valid.includes(p));
+							if (invalid.length > 0) return `Unknown reader(s): ${invalid.join(", ")}. Valid: ${valid.join(", ")}`;
+							return undefined;
+						},
+					});
+					if (!input) {
+						ctx.ui.notify("Setup cancelled.", "info");
+						return;
+					}
+					value = input.split(",").map(s => s.trim()).filter(Boolean);
+				}
 				break;
 			}
 			case "reader": {
