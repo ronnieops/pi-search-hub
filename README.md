@@ -1,6 +1,6 @@
 # pi-search-hub
 
-Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (Jina or Sofya reader), auto-fallback, RRF-ranked combine mode, and credential resolution via env/shell/literal. Firecrawl supports **keyless mode** (1,000 free credits/month, no API key required).
+Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (5 reader backends with auto-fallback), RRF-ranked combine mode, and credential resolution via env/shell/literal. Firecrawl supports **keyless mode** (1,000 free credits/month, no API key required).
 
 ## Installation
 
@@ -53,17 +53,42 @@ Search for "Rust vs Go performance benchmarks" with combine=true to get results 
 ### Read Web Pages
 
 Fetch any URL as clean markdown — great for extracting article content, docs, or reference pages.
-**Note: `web_read` uses [Jina Reader](https://r.jina.ai/) to fetch and convert URLs to markdown.**
 
 ```text
 Read https://docs.example.com/api-reference
 ```
 
-The `web_read` tool supports:
+The `web_read` tool supports multiple **reader backends**:
 
-- **objective** — CSS selector to target specific content (e.g. "div.article-body")
+| Reader     | Free? | Needs Key? | Notes |
+|------------|-------|------------|-------|
+| **Jina**   | ✅    | Optional   | Default. Supports `objective`, `keywords`, `mode`, `fresh`. Free at r.jina.ai |
+| **Sofya**  | ❌    | Yes        | 250+ site-specific parsers for clean markdown |
+| **Firecrawl** | ✅ | No (keyless) | 1,000 free credits/month, no API key required |
+| **Exa**    | ❌    | Yes        | 1,000 req/month (shared with Exa search) |
+| **Exa MCP** | ✅  | No         | Zero-config, rate-limited |
+
+**Reader fallback:** If the primary reader fails (422, 5xx, network error), `web_read` automatically tries the next reader in the fallback chain. Auth errors (401, 403) are fatal and do not fall through.
+
+Default fallback order: `jina → sofya → firecrawl → exa → exa_mcp`
+
+Configure a custom order in `search.json`:
+
+```json
+{
+  "reader": "jina",
+  "readerFallback": ["firecrawl", "jina", "sofya"]
+}
+```
+
+This tries Firecrawl first, falls back to Jina, then Sofya. Exa and Exa MCP are excluded from the chain.
+
+The `web_read` tool supports these parameters:
+
+- **reader** — override the reader backend (`jina`, `sofya`, `firecrawl`, `exa`, `exa_mcp`)
+- **objective** — CSS selector to target specific content (Jina only)
 - **keywords** — relevant terms to highlight on long pages
-- **mode** — `rush` for speed (return innerText) or `smart` (markdown extraction)
+- **mode** — `rush` for speed (innerText) or `smart` (markdown extraction)
 - **fresh** — bypass cache when freshness matters
 
 ## Supported Backends
@@ -118,6 +143,8 @@ Configure backends globally (all projects) or per-project:
 ```json
 {
   "defaultBackend": "auto",
+  "reader": "jina",
+  "readerFallback": ["firecrawl", "jina", "sofya"],
   "backends": {
     "duckduckgo": { "enabled": true },
     "marginalia": { "enabled": true },
@@ -191,7 +218,7 @@ Or use the interactive setup:
 
 | Command          | Description                                                       |
 | ---------------- | ----------------------------------------------------------------- |
-| `/search-setup`  | Interactive prompt to configure API keys and instance URLs        |
+| `/search-setup`  | Interactive prompt to configure API keys, instance URLs, and global settings (reader fallback order, combine mode, etc.) |
 | `/search-status` | Show which backends are active, which have keys, and their status |
 
 > **Tip:** After running `/search-setup` or editing your config, run `/reload` to activate changes without restarting pi.
