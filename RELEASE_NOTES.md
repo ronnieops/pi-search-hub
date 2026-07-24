@@ -1,3 +1,24 @@
+# Release v2.9.0
+
+## 🚀 New Features
+- **Reader auto-fallback** — `web_read` now automatically falls through to the next reader when the primary returns 422, 5xx, or a network error. Auth errors (401, 403) are fatal and do not fall through. Status line shows which reader is being tried and which succeeded.
+- **Configurable reader fallback order** — New `readerFallback` config option in `search.json` lets users specify which readers to try and in what order. Default: `["jina", "sofya", "firecrawl", "exa", "exa_mcp"]`. Exclude expensive readers or put a preferred reader first.
+- **`/search-setup` global settings UI** — Now includes reader fallback order configuration with validation (only valid reader names accepted).
+
+## 🔧 Refactors
+- **Reader dispatch extracted** — `fetchWithReader()` moved from `search-hub.ts` into `extensions/readers/single.ts`. Fallback orchestration lives in `extensions/readers/dispatch.ts`. Cleaner seam for testing and future reader additions.
+
+## 🧪 Tests
+- **175 tests passing** (11 new: fallback on 422, 5xx, network error, 401/403 fatal, all-fail combined error, custom fallback order, single-entry fallback, onAttempt callback, DEFAULT_READER_FALLBACK constant).
+- **Reader dispatch test file** — `tests/reader-dispatch.test.ts` with 11 tests covering all fallback paths via mocked `fetchWithReader`.
+
+## 📊 Stats
+- 19 backends total
+- 175 tests passing (10 test files)
+- 3 new files: `extensions/readers/single.ts`, `extensions/readers/dispatch.ts`, `tests/reader-dispatch.test.ts`
+
+---
+
 # Release v2.8.0
 
 ## 🚀 New Features
