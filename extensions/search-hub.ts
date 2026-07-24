@@ -46,19 +46,15 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 import type { BackendConfig, SearchConfig, SearchResult, SearchResultWithBackend } from "./types.js";
-import { getAgentDir, timeoutSignal, sanitizeError, clearCooldowns, MISSING_KEY_HELP, validateUrl } from "./utils.js";
-import { resolveBackendKey, getKeySource } from "./credentials.js";
-import { fetchSofya } from "./backends/sofya.js";
-import { fetchFirecrawl } from "./backends/firecrawl.js";
-import { fetchExaContents } from "./backends/exa.js";
-import { fetchExaMCP } from "./backends/exa-mcp.js";
+import { getAgentDir, clearCooldowns, validateUrl } from "./utils.js";
+import { getKeySource } from "./credentials.js";
+import { fetchWithReader, readerLabel } from "./readers/dispatch.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
 import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
-/** Cap on a single web_read response body, in bytes, to bound memory use on heavy pages. */
-const READ_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
 
 // ---------------------------------------------------------------------------
 // Extension
@@ -399,8 +395,8 @@ export default function (pi: ExtensionAPI) {
 				: `https://${params.url}`;
 
 			const reader = params.reader ?? config.reader ?? "jina";
-			const readerLabel = reader === "sofya" ? "Sofya" : reader === "firecrawl" ? "Firecrawl" : reader === "exa" ? "Exa" : reader === "exa_mcp" ? "Exa MCP" : "Jina";
-			setStatus(`📄 ${readerLabel}: fetching...`);
+			const label = readerLabel(reader);
+			setStatus(`📄 ${label}: fetching...`);
 
 			// SSRF guard — block private/internal addresses regardless of reader.
 			const ssrfError = validateUrl(url);
@@ -408,94 +404,31 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(ssrfError);
 			}
 
-			let content: string;
-			if (reader === "sofya") {
-				// Sofya Fetch: clean markdown via 250+ site-specific parsers.
-				const sofyaKey = resolveBackendKey("sofya", config);
-				if (!sofyaKey) {
-					throw new Error(`Sofya reader selected but no API key configured. ${MISSING_KEY_HELP}`);
-				}
-				const result = await fetchSofya(url, sofyaKey, signal);
-				content = result.content;
-			} else if (reader === "firecrawl") {
-				// Firecrawl Scrape: keyless mode (1000 free credits/mo).
-				const firecrawlKey = resolveBackendKey("firecrawl", config);
-				const result = await fetchFirecrawl(url, firecrawlKey, signal);
-				content = result.content;
-			} else if (reader === "exa") {
-				// Exa Contents API: needs API key (1000 req/mo, shared with search).
-				const exaKey = resolveBackendKey("exa", config);
-				if (!exaKey) {
-					throw new Error(`Exa reader selected but no API key configured. ${MISSING_KEY_HELP}`);
-				}
-				const result = await fetchExaContents(url, exaKey, signal);
-				if (result.warning) {
-					ctx.ui.notify(result.warning, "warn");
-				}
-				content = result.content;
-			} else if (reader === "exa_mcp") {
-				// Exa MCP web_fetch: zero-config, no API key needed.
-				const result = await fetchExaMCP(url, signal);
-				content = result.content;
-			} else {
-				// Jina Reader: free, supports keywords / mode / objective hints.
-				const readerUrl = new URL("https://r.jina.ai/" + url);
+			const result = await fetchWithReader(
+				url,
+				reader,
+				{ fresh: params.fresh, keywords: params.keywords, mode: params.mode, objective: params.objective },
+				signal,
+				config,
+			);
 
-				const headers: Record<string, string> = {
-					"Accept": "text/plain",
-				};
-
-				// Optional Jina API key for higher rate limits (fallback to no-auth)
-				const jinaKey = resolveBackendKey("jina", config);
-				if (jinaKey) {
-					headers["Authorization"] = `Bearer ${jinaKey}`;
-				}
-
-				if (params.fresh) {
-					headers["x-no-cache"] = "true";
-				}
-				if (params.keywords && params.keywords.length > 0) {
-					headers["x-keywords"] = params.keywords.join(", ");
-				}
-				if (params.mode) {
-					headers["x-respond-with"] = params.mode === "rush" ? "text" : "markdown";
-				}
-				if (params.objective) {
-					headers["x-target-selector"] = params.objective;
-				}
-
-				const response = await fetch(readerUrl.toString(), {
-					signal: timeoutSignal(signal),
-					headers,
-				});
-
-				if (!response.ok) {
-					const text = await response.text().catch(() => "");
-					throw new Error(`Failed to read ${url}: ${sanitizeError(response.status, text)}`);
-				}
-
-				// Size guard — refuse oversized payloads before buffering into memory.
-				const contentLength = parseInt(response.headers.get("content-length") ?? "", 10);
-				if (Number.isFinite(contentLength) && contentLength > READ_MAX_BYTES) {
-					throw new Error(`Failed to read ${url}: response too large (${contentLength} bytes, limit ${READ_MAX_BYTES})`);
-				}
-
-				content = await response.text();
+			if (result.warning) {
+				ctx.ui.notify(result.warning, "warn");
 			}
 
-			setStatus(`📄 ${readerLabel}: ${content.length} chars`);
+			setStatus(`📄 ${readerLabel(result.reader)}: ${result.content.length} chars`);
 
-			const truncated = content.length > 10000
-				? content.slice(0, 10000) + `\n\n[... truncated, full length: ${content.length} chars]`
-				: content;
+			const truncated = result.content.length > 10000
+				? result.content.slice(0, 10000) + `\n\n[... truncated, full length: ${result.content.length} chars]`
+				: result.content;
 
 			return {
 				content: [{ type: "text", text: truncated }],
 				details: {
 					url,
-					reader,
-					length: content.length,
-					truncated: content.length > 10000,
+					reader: result.reader,
+					length: result.content.length,
+					truncated: result.content.length > 10000,
 				},
 			};
 		},
