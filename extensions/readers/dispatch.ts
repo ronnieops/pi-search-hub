@@ -1,137 +1,84 @@
 /**
- * Reader dispatch for web_read — selects and invokes the appropriate content
- * extraction backend (Jina, Sofya, Firecrawl, Exa, Exa MCP).
+ * Reader dispatch for web_read — fallback orchestration across multiple
+ * content extraction backends (Jina, Sofya, Firecrawl, Exa, Exa MCP).
  *
- * Each reader path is a private helper; the public API is `fetchWithReader()`.
+ * The single-reader logic lives in single.ts; this module adds retry/fallback.
  */
 
 import type { SearchConfig } from "../types.js";
-import { timeoutSignal, sanitizeError, MISSING_KEY_HELP } from "../utils.js";
-import { resolveBackendKey } from "../credentials.js";
-import { fetchSofya } from "../backends/sofya.js";
-import { fetchFirecrawl } from "../backends/firecrawl.js";
-import { fetchExaContents } from "../backends/exa.js";
-import { fetchExaMCP } from "../backends/exa-mcp.js";
+import { fetchWithReader, readerLabel } from "./single.js";
+import type { FetchParams, FetchResult } from "./single.js";
 
-/** Cap on a single web_read response body, in bytes, to bound memory use on heavy pages. */
-const READ_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+export type { FetchParams, FetchResult } from "./single.js";
+export { fetchWithReader, readerLabel } from "./single.js";
 
-/** Human-readable label for each reader. */
-export function readerLabel(reader: string): string {
-	switch (reader) {
-		case "sofya": return "Sofya";
-		case "firecrawl": return "Firecrawl";
-		case "exa": return "Exa";
-		case "exa_mcp": return "Exa MCP";
-		default: return "Jina";
+/** Default fallback order for readers. */
+export const DEFAULT_READER_FALLBACK = ["jina", "sofya", "firecrawl", "exa", "exa_mcp"];
+
+/**
+ * Determine whether a reader error is retryable (transient) or fatal (auth).
+ *
+ * Retryable: 422, 5xx, network errors, timeouts, "no content" messages.
+ * Fatal: 401, 403 — configuration problems, not transient.
+ */
+function isRetryableError(err: Error): boolean {
+	const msg = err.message;
+	// Auth errors — do NOT retry
+	if (/\b(401|403)\b/.test(msg) || /unauthorized|forbidden/i.test(msg)) {
+		return false;
 	}
-}
-
-export interface FetchParams {
-	fresh?: boolean;
-	keywords?: string[];
-	mode?: string;
-	objective?: string;
-}
-
-export interface FetchResult {
-	content: string;
-	reader: string;
-	warning?: string;
+	// Everything else is retryable
+	return true;
 }
 
 /**
- * Fetch a URL using the specified reader backend.
+ * Try readers in fallback order until one succeeds.
  *
- * @param url    - The URL to fetch (already validated for SSRF).
- * @param reader - Reader backend name ("jina", "sofya", "firecrawl", "exa", "exa_mcp").
- * @param params - Additional parameters (fresh, keywords, mode, objective).
- * @param signal - Optional abort signal.
- * @param config - Search config for credential resolution.
+ * @param url       - The URL to fetch (already validated for SSRF).
+ * @param readers   - Ordered list of reader backends to try.
+ * @param params    - Additional parameters (fresh, keywords, mode, objective).
+ * @param signal    - Optional abort signal.
+ * @param config    - Search config for credential resolution.
+ * @param onAttempt - Optional callback fired before each attempt (for status updates).
  * @returns The fetched content and the reader that served it.
  */
-export async function fetchWithReader(
+export async function fetchWithFallback(
 	url: string,
-	reader: string,
+	readers: string[],
 	params: FetchParams,
 	signal: AbortSignal | undefined,
 	config: SearchConfig,
+	onAttempt?: (reader: string, index: number, total: number) => void,
 ): Promise<FetchResult> {
-	switch (reader) {
-		case "sofya": {
-			const sofyaKey = resolveBackendKey("sofya", config);
-			if (!sofyaKey) {
-				throw new Error(`Sofya reader selected but no API key configured. ${MISSING_KEY_HELP}`);
-			}
-			const result = await fetchSofya(url, sofyaKey, signal);
-			return { content: result.content, reader: "sofya" };
-		}
+	const errors: Array<{ reader: string; error: string }> = [];
 
-		case "firecrawl": {
-			const firecrawlKey = resolveBackendKey("firecrawl", config);
-			const result = await fetchFirecrawl(url, firecrawlKey, signal);
-			return { content: result.content, reader: "firecrawl" };
-		}
+	for (let i = 0; i < readers.length; i++) {
+		const candidate = readers[i];
+		onAttempt?.(candidate, i, readers.length);
 
-		case "exa": {
-			const exaKey = resolveBackendKey("exa", config);
-			if (!exaKey) {
-				throw new Error(`Exa reader selected but no API key configured. ${MISSING_KEY_HELP}`);
-			}
-			const result = await fetchExaContents(url, exaKey, signal);
-			return { content: result.content, reader: "exa", warning: result.warning };
-		}
+		try {
+			const result = await fetchWithReader(url, candidate, params, signal, config);
+			// Success — return immediately
+			return result;
+		} catch (err) {
+			const errorMsg = (err as Error).message;
+			errors.push({ reader: candidate, error: errorMsg });
 
-		case "exa_mcp": {
-			const result = await fetchExaMCP(url, signal);
-			return { content: result.content, reader: "exa_mcp" };
-		}
-
-		default: {
-			// Jina Reader: free, supports keywords / mode / objective hints.
-			const readerUrl = new URL("https://r.jina.ai/" + url);
-
-			const headers: Record<string, string> = {
-				"Accept": "text/plain",
-			};
-
-			// Optional Jina API key for higher rate limits (fallback to no-auth)
-			const jinaKey = resolveBackendKey("jina", config);
-			if (jinaKey) {
-				headers["Authorization"] = `Bearer ${jinaKey}`;
+			// Auth errors are fatal — do not fall through
+			if (!isRetryableError(err as Error)) {
+				throw err;
 			}
 
-			if (params.fresh) {
-				headers["x-no-cache"] = "true";
+			// Last reader failed — throw combined error
+			if (i === readers.length - 1) {
+				const summary = errors
+					.map(e => `${e.reader}: ${e.error}`)
+					.join("; ");
+				throw new Error(`All readers failed: ${summary}`);
 			}
-			if (params.keywords && params.keywords.length > 0) {
-				headers["x-keywords"] = params.keywords.join(", ");
-			}
-			if (params.mode) {
-				headers["x-respond-with"] = params.mode === "rush" ? "text" : "markdown";
-			}
-			if (params.objective) {
-				headers["x-target-selector"] = params.objective;
-			}
-
-			const response = await fetch(readerUrl.toString(), {
-				signal: timeoutSignal(signal),
-				headers,
-			});
-
-			if (!response.ok) {
-				const text = await response.text().catch(() => "");
-				throw new Error(`Failed to read ${url}: ${sanitizeError(response.status, text)}`);
-			}
-
-			// Size guard — refuse oversized payloads before buffering into memory.
-			const contentLength = parseInt(response.headers.get("content-length") ?? "", 10);
-			if (Number.isFinite(contentLength) && contentLength > READ_MAX_BYTES) {
-				throw new Error(`Failed to read ${url}: response too large (${contentLength} bytes, limit ${READ_MAX_BYTES})`);
-			}
-
-			const content = await response.text();
-			return { content, reader: "jina" };
 		}
 	}
+
+	// Should not reach here, but satisfy TS
+	throw new Error("All readers failed: no readers in fallback list");
 }

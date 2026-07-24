@@ -48,7 +48,7 @@ import { Type } from "typebox";
 import type { BackendConfig, SearchConfig, SearchResult, SearchResultWithBackend } from "./types.js";
 import { getAgentDir, clearCooldowns, validateUrl } from "./utils.js";
 import { getKeySource } from "./credentials.js";
-import { fetchWithReader, readerLabel } from "./readers/dispatch.js";
+import { fetchWithReader, fetchWithFallback, readerLabel, DEFAULT_READER_FALLBACK } from "./readers/dispatch.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
 import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
@@ -404,12 +404,22 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(ssrfError);
 			}
 
-			const result = await fetchWithReader(
-				url,
+			// Build fallback chain: requested reader first, then the rest from default order
+			const readerFallback = config.readerFallback ?? DEFAULT_READER_FALLBACK;
+			const fallbackChain = [
 				reader,
+				...readerFallback.filter(r => r !== reader),
+			];
+
+			const result = await fetchWithFallback(
+				url,
+				fallbackChain,
 				{ fresh: params.fresh, keywords: params.keywords, mode: params.mode, objective: params.objective },
 				signal,
 				config,
+				(candidate, _index, _total) => {
+					setStatus(`📄 ${readerLabel(candidate)}: fetching...`);
+				},
 			);
 
 			if (result.warning) {
