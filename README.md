@@ -332,4 +332,4 @@ MIT
 
 ---
 
-<p align="true">Proudly created with <a href="https://pi.dev">pi</a></p>
+<p align="true">Co-authored by <a href="https://github.com/earendil-works/pi">pi</a> — the coding agent that built most of this project</p>
