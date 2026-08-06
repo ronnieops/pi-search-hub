@@ -5,7 +5,7 @@
 import type { SearchResult, SearchResultWithBackend } from "./types.js";
 
 export type BackendStats = { success: boolean; count: number; error?: string };
-import { config, roundRobinIndex, incrementRoundRobin } from "./config.js";
+import { config, roundRobinIndex, incrementRoundRobin, recordLatency } from "./config.js";
 import { scoreBackends } from "./scoring.js";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +41,77 @@ export function selectBackendsForFallback(
 		default:
 			return backends;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Fallback chain
+// ---------------------------------------------------------------------------
+
+export type FallbackEvent =
+	| { type: "start"; backend: string }
+	| { type: "results"; backend: string; count: number }
+	| { type: "empty"; backend: string }
+	| { type: "error"; backend: string; message: string };
+
+export interface FallbackOutcome {
+	/** Backend that returned non-empty results, or null when none did. */
+	backend: string | null;
+	results: SearchResult[];
+	/** "<backend>: <message>" for every backend that threw. */
+	errors: string[];
+	/** Backends that resolved successfully but returned zero results. */
+	emptyBackends: string[];
+}
+
+/**
+ * Try each backend in order until one returns non-empty results.
+ *
+ * A backend that resolves with zero results is treated as unusable and the chain
+ * continues. Several providers signal quota exhaustion, rate limiting or a blocked
+ * region with an empty 200 body rather than an error status, so stopping at the
+ * first non-throwing backend would hand the model an empty answer while usable
+ * backends sit untried. This matches runTargetedCombine, which already requires
+ * non-empty results for a backend to count as usable.
+ */
+export async function runFallbackChain({
+	orderedBackends,
+	query,
+	numResults,
+	signal,
+	runBackend,
+	onEvent,
+}: {
+	orderedBackends: string[];
+	query: string;
+	numResults: number;
+	signal?: AbortSignal;
+	runBackend: (backend: string, query: string, numResults: number, signal?: AbortSignal) => Promise<SearchResult[]>;
+	onEvent?: (event: FallbackEvent) => void;
+}): Promise<FallbackOutcome> {
+	const errors: string[] = [];
+	const emptyBackends: string[] = [];
+
+	for (const backend of orderedBackends) {
+		onEvent?.({ type: "start", backend });
+		const startedAt = Date.now();
+		try {
+			const results = await runBackend(backend, query, numResults, signal);
+			recordLatency(backend, Date.now() - startedAt);
+			if (results.length === 0) {
+				emptyBackends.push(backend);
+				onEvent?.({ type: "empty", backend });
+				continue;
+			}
+			onEvent?.({ type: "results", backend, count: results.length });
+			return { backend, results, errors, emptyBackends };
+		} catch (err) {
+			const message = (err as Error).message;
+			errors.push(`${backend}: ${message}`);
+			onEvent?.({ type: "error", backend, message });
+		}
+	}
+
+	return { backend: null, results: [], errors, emptyBackends };
 }
 
 // ---------------------------------------------------------------------------

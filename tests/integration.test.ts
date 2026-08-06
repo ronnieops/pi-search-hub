@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { reciprocalRankFusion, runTargetedCombine, selectBackendsForFallback } from "../extensions/dispatch.js";
+import { reciprocalRankFusion, runFallbackChain, runTargetedCombine, selectBackendsForFallback } from "../extensions/dispatch.js";
 import { recordBackendSuccess, recordBackendFailure } from "../extensions/scoring.js";
 import { resolveConfigValue, clearCredentialCache } from "../extensions/credentials.js";
 import { loadConfig } from "../extensions/config.js";
@@ -127,6 +127,134 @@ describe("reciprocalRankFusion", () => {
 
 // ---------------------------------------------------------------------------
 // Targeted combine tests
+// ---------------------------------------------------------------------------
+
+describe("runFallbackChain", () => {
+	const resultFor = (backend: string) => [{
+		title: `${backend} result`,
+		url: `https://example.com/${backend}`,
+		snippet: `${backend} snippet`,
+	}];
+
+	it("returns the first backend that yields non-empty results", async () => {
+		const calls: string[] = [];
+		const outcome = await runFallbackChain({
+			orderedBackends: ["a", "b", "c"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async (backend) => {
+				calls.push(backend);
+				return resultFor(backend);
+			},
+		});
+
+		expect(calls).toEqual(["a"]);
+		expect(outcome.backend).toBe("a");
+		expect(outcome.results).toHaveLength(1);
+		expect(outcome.errors).toEqual([]);
+		expect(outcome.emptyBackends).toEqual([]);
+	});
+
+	it("falls through a backend that returns zero results", async () => {
+		const calls: string[] = [];
+		const outcome = await runFallbackChain({
+			orderedBackends: ["a", "b", "c"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async (backend) => {
+				calls.push(backend);
+				return backend === "a" ? [] : resultFor(backend);
+			},
+		});
+
+		expect(calls).toEqual(["a", "b"]);
+		expect(outcome.backend).toBe("b");
+		expect(outcome.emptyBackends).toEqual(["a"]);
+		expect(outcome.errors).toEqual([]);
+	});
+
+	it("falls through both empty and throwing backends", async () => {
+		const calls: string[] = [];
+		const outcome = await runFallbackChain({
+			orderedBackends: ["a", "b", "c"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async (backend) => {
+				calls.push(backend);
+				if (backend === "a") return [];
+				if (backend === "b") throw new Error("b rate limited");
+				return resultFor(backend);
+			},
+		});
+
+		expect(calls).toEqual(["a", "b", "c"]);
+		expect(outcome.backend).toBe("c");
+		expect(outcome.emptyBackends).toEqual(["a"]);
+		expect(outcome.errors).toEqual(["b: b rate limited"]);
+	});
+
+	it("reports no serving backend when every backend is empty", async () => {
+		const outcome = await runFallbackChain({
+			orderedBackends: ["a", "b"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async () => [],
+		});
+
+		expect(outcome.backend).toBeNull();
+		expect(outcome.results).toEqual([]);
+		expect(outcome.emptyBackends).toEqual(["a", "b"]);
+		expect(outcome.errors).toEqual([]);
+	});
+
+	it("collects every error when all backends throw", async () => {
+		const outcome = await runFallbackChain({
+			orderedBackends: ["a", "b"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async (backend) => {
+				throw new Error(`${backend} down`);
+			},
+		});
+
+		expect(outcome.backend).toBeNull();
+		expect(outcome.emptyBackends).toEqual([]);
+		expect(outcome.errors).toEqual(["a: a down", "b: b down"]);
+	});
+
+	it("emits start/empty/results events in order", async () => {
+		const events: string[] = [];
+		await runFallbackChain({
+			orderedBackends: ["a", "b"],
+			query: "test query",
+			numResults: 5,
+			runBackend: async (backend) => (backend === "a" ? [] : resultFor(backend)),
+			onEvent: (event) => {
+				events.push(event.type === "results" ? `results:${event.backend}:${event.count}` : `${event.type}:${event.backend}`);
+			},
+		});
+
+		expect(events).toEqual(["start:a", "empty:a", "start:b", "results:b:1"]);
+	});
+
+	it("returns no serving backend for an empty backend list", async () => {
+		const outcome = await runFallbackChain({
+			orderedBackends: [],
+			query: "test query",
+			numResults: 5,
+			runBackend: async () => {
+				throw new Error("should not be called");
+			},
+		});
+
+		expect(outcome.backend).toBeNull();
+		expect(outcome.errors).toEqual([]);
+		expect(outcome.emptyBackends).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Targeted combine
 // ---------------------------------------------------------------------------
 
 describe("runTargetedCombine", () => {

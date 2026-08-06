@@ -49,9 +49,9 @@ import type { BackendConfig, SearchConfig, SearchResult, SearchResultWithBackend
 import { getAgentDir, clearCooldowns, validateUrl } from "./utils.js";
 import { getKeySource } from "./credentials.js";
 import { fetchWithReader, fetchWithFallback, readerLabel, DEFAULT_READER_FALLBACK } from "./readers/dispatch.js";
-import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
+import { config, refreshConfig, getActiveBackends, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
-import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
+import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine, runFallbackChain } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
 
@@ -291,38 +291,61 @@ export default function (pi: ExtensionAPI) {
 					config.selectionStrategy ?? "sequential",
 					activeBackends,
 				);
-				const errors: string[] = [];
-				for (const backend of orderedBackends) {
-					const backendLabel = BACKEND_DEFS[backend]?.label || backend;
-					const t0 = Date.now();
-					setStatus(`🔍 ${backendLabel}: searching...`);
-					try {
-						const results = await runBackend(backend, params.query, numResults, signal);
-						recordLatency(backend, Date.now() - t0);
-						setStatus(`🔍 ${backendLabel}: ${results.length} results`);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errors.length > 0
-										? `${errors.join("; ")}\n\n${compact ? formatResultsCompact(results) : formatResults(params.query, backend, results)}`
-										: (compact ? formatResultsCompact(results) : formatResults(params.query, backend, results)),
-								},
-							],
-							details: {
-								backend: errors.length > 0 ? `${backend} (fallback)` : backend,
-								resultCount: results.length,
-								errors: errors.length > 0 ? errors : undefined,
-							},
-						};
-					} catch (err) {
-						errors.push(`${backend}: ${(err as Error).message}`);
-						setStatus(`❌ ${backendLabel}: failed, trying next...`);
-					}
+				const { backend, results, errors, emptyBackends } = await runFallbackChain({
+					orderedBackends,
+					query: params.query,
+					numResults,
+					signal,
+					runBackend,
+					onEvent: (event) => {
+						const backendLabel = BACKEND_DEFS[event.backend]?.label || event.backend;
+						switch (event.type) {
+							case "start":
+								setStatus(`🔍 ${backendLabel}: searching...`);
+								break;
+							case "results":
+								setStatus(`🔍 ${backendLabel}: ${event.count} results`);
+								break;
+							case "empty":
+								setStatus(`⚠️ ${backendLabel}: no results, trying next...`);
+								break;
+							case "error":
+								setStatus(`❌ ${backendLabel}: failed, trying next...`);
+								break;
+						}
+					},
+				});
+
+				if (backend === null && emptyBackends.length === 0) {
+					setStatus(`❌ all backends failed`);
+					throw new Error(`All backends failed: ${errors.join("; ")}`);
 				}
 
-				setStatus(`❌ all backends failed`);
-				throw new Error(`All backends failed: ${errors.join("; ")}`);
+				// Every backend returning zero results is a legitimate answer for an
+				// obscure query, so report the empty result set instead of failing.
+				if (backend === null) {
+					setStatus(`🔍 no results from ${emptyBackends.length} backend(s)`);
+				}
+
+				const servedBy = backend ?? emptyBackends[emptyBackends.length - 1];
+				const notes = [...errors, ...emptyBackends.map(b => `${b}: no results`)];
+				const body = compact
+					? formatResultsCompact(results)
+					: formatResults(params.query, servedBy, results);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: notes.length > 0 ? `${notes.join("; ")}\n\n${body}` : body,
+						},
+					],
+					details: {
+						backend: notes.length > 0 ? `${servedBy} (fallback)` : servedBy,
+						resultCount: results.length,
+						errors: errors.length > 0 ? errors : undefined,
+					},
+				};
 			}
 		},
 	});
