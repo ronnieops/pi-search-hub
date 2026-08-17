@@ -3,7 +3,7 @@
  */
 
 import type { BackendRunner, BackendConfig, SearchResult } from "../types.js";
-import { MISSING_KEY_HELP, waitForCooldown, markCooldown, searchCache, cacheKey } from "../utils.js";
+import { MISSING_KEY_HELP, waitForCooldown, searchCache, cacheKey } from "../utils.js";
 import { resolveBackendKey } from "../credentials.js";
 import { config } from "../config.js";
 import { recordBackendSuccess, recordBackendFailure } from "../scoring.js";
@@ -292,7 +292,6 @@ export async function runBackend(
 		if (cached) return cached;
 	}
 
-	await waitForCooldown(backend);
 	const def = BACKEND_DEFS[backend];
 	if (!def) throw new Error(`Unknown backend: ${backend}`);
 
@@ -321,6 +320,7 @@ export async function runBackend(
 	}
 
 	const bc = (config.backends as Record<string, BackendConfig> | undefined)?.[backend];
+	await waitForCooldown(backend, bc?.requestIntervalMs);
 	const startTime = Date.now();
 	try {
 		const result = await def.search(query, numResults, { key, instanceUrl, signal, backendConfig: bc });
@@ -332,7 +332,5 @@ export async function runBackend(
 	} catch (err) {
 		recordBackendFailure(backend);
 		throw err;
-	} finally {
-		markCooldown(backend);
 	}
 }

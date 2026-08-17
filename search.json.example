@@ -15,7 +15,7 @@
     "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },
     "langsearch": { "enabled": true, "apiKey": "LANGSEARCH_API_KEY" },
     "websearchapi": { "enabled": true, "apiKey": "WEBSEARCHAPI_API_KEY" },
-    "perplexity": { "enabled": true, "apiKey": "PERPLEXITY_API_KEY", "model": "sonar" },
+    "perplexity": { "enabled": true, "apiKey": "PERPLEXITY_API_KEY", "model": "sonar", "requestIntervalMs": 1500 },
     "searxng": { "enabled": true, "instanceUrl": "http://localhost:8888" }
   }
 }
