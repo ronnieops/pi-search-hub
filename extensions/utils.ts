@@ -33,21 +33,32 @@ export function getAgentDir(): string {
 // ---------------------------------------------------------------------------
 
 const backendCooldowns = new Map<string, number>();
+const backendCooldownQueues = new Map<string, Promise<void>>();
 
-export function waitForCooldown(backend: string): Promise<void> {
-	const until = backendCooldowns.get(backend);
-	if (!until) return Promise.resolve();
-	const delay = until - Date.now();
-	if (delay <= 0) return Promise.resolve();
-	return new Promise(r => setTimeout(r, delay));
-}
-
-export function markCooldown(backend: string) {
-	backendCooldowns.set(backend, Date.now() + COOLDOWN_MS);
+/**
+ * Reserve the next request slot for a backend.
+ *
+ * Reservations are serialized so parallel web_search calls cannot all observe
+ * an expired cooldown and start together. The interval is measured between
+ * request start times, which directly enforces provider TPS limits.
+ */
+export async function waitForCooldown(backend: string, minIntervalMs = COOLDOWN_MS): Promise<void> {
+	const interval = Number.isFinite(minIntervalMs) && minIntervalMs >= 0
+		? minIntervalMs
+		: COOLDOWN_MS;
+	const previous = backendCooldownQueues.get(backend) ?? Promise.resolve();
+	const reservation = previous.catch(() => {}).then(async () => {
+		const delay = (backendCooldowns.get(backend) ?? 0) - Date.now();
+		if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay));
+		backendCooldowns.set(backend, Date.now() + interval);
+	});
+	backendCooldownQueues.set(backend, reservation);
+	await reservation;
 }
 
 export function clearCooldowns() {
 	backendCooldowns.clear();
+	backendCooldownQueues.clear();
 }
 
 // ---------------------------------------------------------------------------

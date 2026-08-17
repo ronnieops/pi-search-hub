@@ -161,7 +161,8 @@ Configure backends globally (all projects) or per-project:
     "perplexity": {
       "enabled": true,
       "apiKey": "PERPLEXITY_API_KEY",
-      "model": "sonar"
+      "model": "sonar",
+      "requestIntervalMs": 1500
     },
     "searxng": { "enabled": true, "instanceUrl": "http://localhost:8888" },
     "linkup": { "enabled": true, "apiKey": "LINKUP_API_KEY" },
@@ -171,6 +172,26 @@ Configure backends globally (all projects) or per-project:
   }
 }
 ```
+
+### Per-backend request throttling
+
+Set `requestIntervalMs` to enforce a minimum interval between request starts for a backend. Reservations are serialized across concurrent `web_search` calls, preventing parallel calls from racing past providers' requests-per-second limits.
+
+For example, Perplexity enforces a 1 TPS limit on some accounts. A 1.5 second interval provides some scheduling and network-latency headroom:
+
+```json
+{
+  "backends": {
+    "perplexity": {
+      "enabled": true,
+      "apiKey": "PERPLEXITY_API_KEY",
+      "requestIntervalMs": 1500
+    }
+  }
+}
+```
+
+The default is `2000` ms for backward compatibility. Set it to `0` to disable throttling for a backend.
 
 ### Credential Resolution
 

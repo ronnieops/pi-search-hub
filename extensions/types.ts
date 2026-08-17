@@ -7,6 +7,8 @@ export interface BackendConfig {
 	apiKey?: string;
 	/** Per-backend timeout override in milliseconds. Default: 30000 */
 	timeout?: number;
+	/** Minimum milliseconds between request starts for this backend. Default: 2000. */
+	requestIntervalMs?: number;
 	/** Per-backend max results override. Default: 10 */
 	maxResults?: number;
 	/** Per-backend extra headers */
