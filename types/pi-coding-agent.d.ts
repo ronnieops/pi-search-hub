@@ -21,10 +21,21 @@ declare module "@earendil-works/pi-coding-agent" {
 		input(label: string, options?: UIInputOptions): Promise<string | undefined>;
 	}
 
+	export interface ModelRegistry {
+		find(provider: string, modelId: string): import("@earendil-works/pi-ai").Model | undefined;
+		hasConfiguredAuth(model: import("@earendil-works/pi-ai").Model): boolean;
+		complete<TApi extends import("@earendil-works/pi-ai").Api>(
+			model: import("@earendil-works/pi-ai").Model<TApi>,
+			context: import("@earendil-works/pi-ai").Context,
+			options?: import("@earendil-works/pi-ai").ModelsApiStreamOptions<TApi>,
+		): Promise<import("@earendil-works/pi-ai").AssistantMessage>;
+	}
+
 	export interface ExtensionContext {
 		cwd: string;
 		hasUI: boolean;
 		ui: UI;
+		modelRegistry: ModelRegistry;
 	}
 
 	export interface ToolParameter {
