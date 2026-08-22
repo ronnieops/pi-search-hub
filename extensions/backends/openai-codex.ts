@@ -66,7 +66,7 @@ export async function searchOpenAICodex(
 	};
 
 	const message = await modelRegistry.complete(model, context, {
-		signal: timeoutSignal(signal),
+		signal: timeoutSignal(signal, 120_000),
 		transport: "sse",
 		reasoningEffort: "minimal",
 		textVerbosity: "low",
