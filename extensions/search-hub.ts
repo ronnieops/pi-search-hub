@@ -150,7 +150,9 @@ export default function (pi: ExtensionAPI) {
 				const backendLabel = BACKEND_DEFS[requestedBackend]?.label || requestedBackend;
 				setStatus(`🔍 ${backendLabel}: searching...`);
 				try {
-					const results = await runBackend(requestedBackend, params.query, numResults, signal);
+					const results = await runBackend(requestedBackend, params.query, numResults, signal, {
+						modelRegistry: ctx.modelRegistry,
+					});
 					setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 					return {
 						content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
@@ -181,7 +183,10 @@ export default function (pi: ExtensionAPI) {
 						query: params.query,
 						numResults,
 						signal,
-						runBackend,
+						runBackend: (backend, query, backendNumResults, backendSignal) =>
+							runBackend(backend, query, backendNumResults, backendSignal, {
+								modelRegistry: ctx.modelRegistry,
+							}),
 					});
 
 					if (usableBackendCount === 0) {
@@ -226,6 +231,7 @@ export default function (pi: ExtensionAPI) {
 								params.query,
 								Math.ceil(numResults / activeBackends.length),
 								signal,
+								{ modelRegistry: ctx.modelRegistry },
 							);
 							return {
 								backend,
@@ -297,7 +303,9 @@ export default function (pi: ExtensionAPI) {
 					const t0 = Date.now();
 					setStatus(`🔍 ${backendLabel}: searching...`);
 					try {
-						const results = await runBackend(backend, params.query, numResults, signal);
+						const results = await runBackend(backend, params.query, numResults, signal, {
+							modelRegistry: ctx.modelRegistry,
+						});
 						recordLatency(backend, Date.now() - t0);
 						setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 						return {

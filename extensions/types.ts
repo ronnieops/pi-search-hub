@@ -2,6 +2,8 @@
  * Shared types for pi-search-hub extension.
  */
 
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+
 export interface BackendConfig {
 	enabled?: boolean;
 	apiKey?: string;
@@ -97,6 +99,12 @@ export interface BackendRunner {
 	search: (
 		query: string,
 		numResults: number,
-		deps: { key?: string; instanceUrl?: string; signal?: AbortSignal; backendConfig?: BackendConfig },
+		deps: {
+			key?: string;
+			instanceUrl?: string;
+			signal?: AbortSignal;
+			backendConfig?: BackendConfig;
+			modelRegistry?: ModelRegistry;
+		},
 	) => Promise<{ results: SearchResult[] }>;
 }

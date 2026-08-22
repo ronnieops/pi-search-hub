@@ -1,21 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-const { streamOpenAICodexResponsesMock } = vi.hoisted(() => ({
-	streamOpenAICodexResponsesMock: vi.fn(),
-}));
-
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-	AuthStorage: {
-		create: () => ({
-			getApiKey: async () => "test-api-key",
-		}),
-	},
-}));
-
-vi.mock("@earendil-works/pi-ai", () => ({
-	getModel: () => ({ id: "gpt-5.4-mini" }),
-	streamOpenAICodexResponses: streamOpenAICodexResponsesMock,
-}));
+vi.mock("@earendil-works/pi-coding-agent", () => ({}));
+vi.mock("@earendil-works/pi-ai", () => ({}));
 
 vi.mock("typebox", () => ({
 	Type: {
@@ -26,29 +12,79 @@ vi.mock("typebox", () => ({
 	},
 }));
 
-beforeEach(() => {
-	streamOpenAICodexResponsesMock.mockReset();
-	streamOpenAICodexResponsesMock.mockReturnValue({
-		result: async () => ({ stopReason: "error", errorMessage: "not used in helper tests", content: [] }),
-	});
-});
-
 describe("openai-codex helpers", () => {
-	it("searchOpenAICodex asks Codex for rich source-grounded snippets", async () => {
+	it("searchOpenAICodex uses Pi model runtime auth and preserves Codex request options", async () => {
 		const { searchOpenAICodex } = await import("./backends/openai-codex.ts");
+		const model = { id: "gpt-5.4-mini", provider: "openai-codex", api: "openai-codex-responses" };
+		const modelRegistry = {
+			find: vi.fn(() => model),
+			hasConfiguredAuth: vi.fn(() => true),
+			complete: vi.fn(async (_model: unknown, _context: any, _options: any) => ({
+				stopReason: "toolUse",
+				content: [
+					{
+						type: "toolCall",
+						name: "submit_search_results",
+						arguments: {
+							results: [{ title: "Example", url: "https://example.com", snippet: "Source summary" }],
+						},
+					},
+				],
+			})),
+		};
 
-		await expect(searchOpenAICodex("test query", 3)).rejects.toThrow("not used in helper tests");
+		const result = await searchOpenAICodex(
+			"test query",
+			3,
+			modelRegistry as never,
+		);
 
-		const [, context] = streamOpenAICodexResponsesMock.mock.calls[0];
+		expect(result.results).toEqual([
+			{
+				title: "Example",
+				url: "https://example.com/",
+				snippet: "Source summary",
+				content: "Source summary",
+			},
+		]);
+		expect(modelRegistry.find).toHaveBeenCalledWith("openai-codex", "gpt-5.4-mini");
+
+		const [completedModel, context, options] = modelRegistry.complete.mock.calls[0];
 		const submitTool = context.tools[0];
 		const resultSchema = submitTool.parameters.results.value;
 
+		expect(completedModel).toBe(model);
+		expect(options).toMatchObject({
+			transport: "sse",
+			reasoningEffort: "minimal",
+			textVerbosity: "low",
+		});
+		expect(options.signal).toBeInstanceOf(AbortSignal);
+		expect(options.onPayload).toBeTypeOf("function");
 		expect(context.systemPrompt).toContain("450-500 character");
 		expect(context.systemPrompt).toContain("normal search-result display");
 		expect(context.systemPrompt).not.toContain("For content");
 		expect(resultSchema.snippet.description).toContain("450-500 character");
 		expect(resultSchema.snippet.description).toContain("Prefer completeness and concrete details over brevity");
 		expect("content" in resultSchema).toBe(false);
+	});
+
+	it("searchOpenAICodex reports missing Pi-managed Codex auth", async () => {
+		const { searchOpenAICodex } = await import("./backends/openai-codex.ts");
+		const modelRegistry = {
+			find: vi.fn(() => ({
+				id: "gpt-5.4-mini",
+				provider: "openai-codex",
+				api: "openai-codex-responses",
+			})),
+			hasConfiguredAuth: vi.fn(() => false),
+			complete: vi.fn(),
+		};
+
+		await expect(searchOpenAICodex("test query", 3, modelRegistry as never)).rejects.toThrow(
+			"OpenAI Codex authentication not found. Run /login and select OpenAI Codex.",
+		);
+		expect(modelRegistry.complete).not.toHaveBeenCalled();
 	});
 
 	it("injectCodexSearchPayload prepends hosted search and preserves function tools", async () => {
