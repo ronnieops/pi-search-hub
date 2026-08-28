@@ -19,7 +19,7 @@
  * Config: ~/.pi/agent/extensions/search.json + .pi/search.json (project wins)
  * Credentials: env var refs (ALL_CAPS), shell commands (!command), or literal keys
  *
- * Statusline activity: Shows "search" status during search operations
+ * Statusline activity: Shows search/read progress when showStatus is enabled
  *
  * Example .pi/search.json:
  *   {
@@ -145,7 +145,9 @@ export default function (pi: ExtensionAPI) {
 
 			// Helper to update statusline
 			const setStatus = (status: string) => {
-				ctx.ui.setStatus("search", status);
+				if (config.showStatus !== false) {
+					ctx.ui.setStatus("search", status);
+				}
 				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
 			};
 
@@ -390,7 +392,9 @@ export default function (pi: ExtensionAPI) {
 
 			// Helper to update statusline for web_read
 			const setStatus = (status: string) => {
-				ctx.ui.setStatus("read", status);
+				if (config.showStatus !== false) {
+					ctx.ui.setStatus("read", status);
+				}
 				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
 			};
 
@@ -941,6 +945,9 @@ export default function (pi: ExtensionAPI) {
 		if (config.showStatus !== false) {
 			const status = getActiveBackends().join(", ");
 			ctx.ui.setStatus("search", `search: ${status}`);
+		} else {
+			ctx.ui.setStatus("search", undefined);
+			ctx.ui.setStatus("read", undefined);
 		}
 	});
 }

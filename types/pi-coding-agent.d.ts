@@ -15,7 +15,7 @@ declare module "@earendil-works/pi-coding-agent" {
 
 	export interface UI {
 		notify(message: string, type?: "info" | "warn" | "error" | "success"): void;
-		setStatus(key: string, status: string): void;
+		setStatus(key: string, status: string | undefined): void;
 		select<T extends string>(label: string, options: T[]): Promise<T | undefined>;
 		select<T extends UISelectOption>(label: string, options: T[]): Promise<T | undefined>;
 		input(label: string, options?: UIInputOptions): Promise<string | undefined>;
