@@ -140,6 +140,8 @@ Configure backends globally (all projects) or per-project:
 **Global:** `~/.pi/agent/extensions/search.json`
 **Project:** `.pi/search.json` (project takes precedence)
 
+Set `"showStatus": false` to hide and clear the Search Hub startup, search, and reader footer statuses. Tool progress updates remain visible.
+
 ```json
 {
   "defaultBackend": "auto",

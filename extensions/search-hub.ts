@@ -19,7 +19,7 @@
  * Config: ~/.pi/agent/extensions/search.json + .pi/search.json (project wins)
  * Credentials: env var refs (ALL_CAPS), shell commands (!command), or literal keys
  *
- * Statusline activity: Shows "search" status during search operations
+ * Statusline activity: Shows startup, search, and reader status when showStatus is not false
  *
  * Example .pi/search.json:
  *   {
@@ -55,6 +55,19 @@ import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } f
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
 
+
+// ---------------------------------------------------------------------------
+// Footer status
+// ---------------------------------------------------------------------------
+
+type StatusContext = { ui: { setStatus(key: string, status: string | undefined): void } };
+
+function showFooterStatus(ctx: StatusContext): boolean {
+	if (config.showStatus !== false) return true;
+	ctx.ui.setStatus("search", undefined);
+	ctx.ui.setStatus("read", undefined);
+	return false;
+}
 
 // ---------------------------------------------------------------------------
 // Extension
@@ -123,6 +136,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			refreshConfig(ctx.cwd);
+			const footerStatusVisible = showFooterStatus(ctx);
 			const numResults = Math.max(1, Math.min(params.numResults ?? 10, 20));
 			const requestedBackend = params.backend || "auto";
 			const combine = params.combine ?? false;
@@ -141,7 +155,7 @@ export default function (pi: ExtensionAPI) {
 
 			// Helper to update statusline
 			const setStatus = (status: string) => {
-				ctx.ui.setStatus("search", status);
+				if (footerStatusVisible) ctx.ui.setStatus("search", status);
 				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
 			};
 
@@ -150,7 +164,9 @@ export default function (pi: ExtensionAPI) {
 				const backendLabel = BACKEND_DEFS[requestedBackend]?.label || requestedBackend;
 				setStatus(`🔍 ${backendLabel}: searching...`);
 				try {
-					const results = await runBackend(requestedBackend, params.query, numResults, signal);
+					const results = await runBackend(requestedBackend, params.query, numResults, signal, {
+						modelRegistry: ctx.modelRegistry,
+					});
 					setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 					return {
 						content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
@@ -181,7 +197,10 @@ export default function (pi: ExtensionAPI) {
 						query: params.query,
 						numResults,
 						signal,
-						runBackend,
+						runBackend: (backend, query, backendNumResults, backendSignal) =>
+							runBackend(backend, query, backendNumResults, backendSignal, {
+								modelRegistry: ctx.modelRegistry,
+							}),
 					});
 
 					if (usableBackendCount === 0) {
@@ -226,6 +245,7 @@ export default function (pi: ExtensionAPI) {
 								params.query,
 								Math.ceil(numResults / activeBackends.length),
 								signal,
+								{ modelRegistry: ctx.modelRegistry },
 							);
 							return {
 								backend,
@@ -297,7 +317,9 @@ export default function (pi: ExtensionAPI) {
 					const t0 = Date.now();
 					setStatus(`🔍 ${backendLabel}: searching...`);
 					try {
-						const results = await runBackend(backend, params.query, numResults, signal);
+						const results = await runBackend(backend, params.query, numResults, signal, {
+							modelRegistry: ctx.modelRegistry,
+						});
 						recordLatency(backend, Date.now() - t0);
 						setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 						return {
@@ -383,10 +405,11 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			refreshConfig(ctx.cwd);
+			const footerStatusVisible = showFooterStatus(ctx);
 
 			// Helper to update statusline for web_read
 			const setStatus = (status: string) => {
-				ctx.ui.setStatus("read", status);
+				if (footerStatusVisible) ctx.ui.setStatus("read", status);
 				onUpdate?.({ content: [{ type: "text", text: `*${status}*` }] });
 			};
 
@@ -915,7 +938,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		clearCooldowns();
 		refreshConfig(ctx.cwd);
-		if (config.showStatus !== false) {
+		if (showFooterStatus(ctx)) {
 			const status = getActiveBackends().join(", ");
 			ctx.ui.setStatus("search", `search: ${status}`);
 		}

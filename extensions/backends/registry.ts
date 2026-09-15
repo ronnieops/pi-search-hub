@@ -2,6 +2,8 @@
  * Backend registry and dispatcher for pi-search-hub extension.
  */
 
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+
 import type { BackendRunner, BackendConfig, SearchResult } from "../types.js";
 import { MISSING_KEY_HELP, waitForCooldown, markCooldown, searchCache, cacheKey } from "../utils.js";
 import { resolveBackendKey } from "../credentials.js";
@@ -129,8 +131,11 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		needsInstanceUrl: false,
 		label: "OpenAI Codex",
 		setupLabel: "OpenAI Codex (draws from subscription)",
-		search: async (query, numResults, { signal, backendConfig }) => {
-			const result = await searchOpenAICodex(query, numResults, signal, backendConfig);
+		search: async (query, numResults, { signal, backendConfig, modelRegistry }) => {
+			if (!modelRegistry) {
+				throw new Error("OpenAI Codex model runtime is unavailable");
+			}
+			const result = await searchOpenAICodex(query, numResults, modelRegistry, signal, backendConfig);
 			return { results: result.results };
 		},
 	},
@@ -284,7 +289,7 @@ export async function runBackend(
 	query: string,
 	numResults: number,
 	signal?: AbortSignal,
-	options?: { skipCache?: boolean },
+	options?: { skipCache?: boolean; modelRegistry?: ModelRegistry },
 ): Promise<SearchResult[]> {
 	// Check cache first (inline — no persistent key var needed here)
 	if (!options?.skipCache) {
@@ -323,7 +328,13 @@ export async function runBackend(
 	const bc = (config.backends as Record<string, BackendConfig> | undefined)?.[backend];
 	const startTime = Date.now();
 	try {
-		const result = await def.search(query, numResults, { key, instanceUrl, signal, backendConfig: bc });
+		const result = await def.search(query, numResults, {
+			key,
+			instanceUrl,
+			signal,
+			backendConfig: bc,
+			modelRegistry: options?.modelRegistry,
+		});
 		const latencyMs = Date.now() - startTime;
 		// Cache the result
 		searchCache.set(cacheKey(query, backend, numResults), result.results);
