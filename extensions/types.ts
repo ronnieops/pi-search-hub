@@ -59,6 +59,7 @@ export interface SearchConfig {
 		tavily?: BackendConfig;
 		exa?: BackendConfig;
 		exa_mcp?: BackendConfig;
+		parallel_mcp?: BackendConfig;
 		"openai-codex"?: BackendConfig;
 		brave?: BackendConfig;
 		braveLLM?: BackendConfig;

@@ -96,6 +96,7 @@ export const FALLBACK_ENV_MAP: Record<string, string> = {
 	firecrawl: "SEARCH_FIRECRAWL_API_KEY",
 	websearchapi: "SEARCH_WEBSEARCHAPI_API_KEY",
 	perplexity: "SEARCH_PERPLEXITY_API_KEY",
+	parallel_mcp: "SEARCH_PARALLEL_MCP_API_KEY",
 	sofya: "SEARCH_SOFYA_API_KEY",
 	youcom: "SEARCH_YOUCOM_API_KEY",
 	linkup: "SEARCH_LINKUP_API_KEY",

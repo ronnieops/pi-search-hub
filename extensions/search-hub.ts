@@ -1,5 +1,5 @@
 /**
- * Extension — Unified web search (19 backends) + content extraction (web_read)
+ * Extension — Unified web search (20 backends) + content extraction (web_read)
  *
  * Backends (choose any, all disabled by default):
  *   duckduckgo    — ✅ Free, no key, via Python ddgs lib. Rate-limited.
@@ -51,6 +51,7 @@ import { getKeySource } from "./credentials.js";
 import { fetchWithReader, fetchWithFallback, readerLabel, DEFAULT_READER_FALLBACK } from "./readers/dispatch.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
+import { startParallelMCPSession } from "./backends/parallel-mcp.js";
 import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
@@ -70,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		description:
 			"Search the web using one of several backend search engines. " +
-			"Supports DuckDuckGo (free, no key), " +
+			"Supports DuckDuckGo (free, no key), Parallel Search MCP (free anonymous access, optional key), " +
 			"Marginalia Search (free, shared public key), Serper, Tavily, Exa, Brave, " +
 			"LangSearch, Firecrawl, WebSearchAPI, Perplexity Sonar, and SearXNG (most need API keys). " +
 			"The best available backend is used automatically. " +
@@ -95,7 +96,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			backend: Type.Optional(
-				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa", "exa_mcp",
+				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa", "exa_mcp", "parallel_mcp",
 					"openai-codex", "brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
 					"searxng", "linkup", "youcom", "fastcrw", "sofya", "auto"] as const, {
 					description:
@@ -659,6 +660,7 @@ export default function (pi: ExtensionAPI) {
 			"jina",
 			"marginalia",
 			"exa_mcp",
+			"parallel_mcp",
 			"searxng",
 		];
 
@@ -667,14 +669,14 @@ export default function (pi: ExtensionAPI) {
 			backends: {
 				...existing.backends,
 				...Object.fromEntries(
-					freeBackends.map(name => [name, { enabled: true }])
+					freeBackends.map(name => [name, { ...existing.backends?.[name], enabled: true }])
 				),
 			},
 		};
 
 		writeFileSync(configPath, JSON.stringify(updated, null, 2) + "\n", { mode: 0o600 });
 		ctx.ui.notify(
-			`Enabled: DuckDuckGo, Jina, Marginalia, Exa MCP, SearXNG. Run /reload to activate.`,
+			`Enabled: DuckDuckGo, Jina, Marginalia, Exa MCP, Parallel Search MCP, SearXNG. Run /reload to activate.`,
 			"success",
 		);
 	}
@@ -853,6 +855,9 @@ export default function (pi: ExtensionAPI) {
 
 				if (name === "duckduckgo") {
 					rows.push([label, "\u2713 enabled, key: \u2014 (free)", avgLatency]);
+				} else if (name === "parallel_mcp" && bc?.enabled) {
+					const keyStatus = configured ? "configured" : source ? "unresolved" : "anonymous";
+					rows.push([label, "\u2713 enabled, key: " + keyStatus + " (free MCP)", avgLatency]);
 				} else if (name === "marginalia" && bc?.enabled) {
 					rows.push([label, "\u2713 enabled, key: optional (public)", avgLatency]);
 				} else if (name === "searxng" && bc?.enabled) {
@@ -913,6 +918,7 @@ export default function (pi: ExtensionAPI) {
 	// -----------------------------------------------------------------------
 
 	pi.on("session_start", async (_event, ctx) => {
+		startParallelMCPSession();
 		clearCooldowns();
 		refreshConfig(ctx.cwd);
 		if (config.showStatus !== false) {

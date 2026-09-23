@@ -12,6 +12,7 @@
     "brave": { "enabled": true, "apiKey": "BRAVE_API_KEY" },
     "tavily": { "enabled": true, "apiKey": "TAVILY_API_KEY" },
     "exa": { "enabled": true, "apiKey": "EXA_API_KEY" },
+    "parallel_mcp": { "enabled": true },
     "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },
     "langsearch": { "enabled": true, "apiKey": "LANGSEARCH_API_KEY" },
     "websearchapi": { "enabled": true, "apiKey": "WEBSEARCHAPI_API_KEY" },
