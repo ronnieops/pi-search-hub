@@ -1,6 +1,6 @@
 # pi-search-hub
 
-Unified web search + content extraction extension for [pi](https://pi.dev) with **19 backend providers** (all working). One `web_search` tool, one `web_read` tool (5 reader backends with auto-fallback), RRF-ranked combine mode, and credential resolution via env/shell/literal. Firecrawl supports **keyless mode** (1,000 free credits/month, no API key required).
+Unified web search + content extraction extension for [pi](https://pi.dev) with **21 backend providers**. One `web_search` tool, one `web_read` tool (5 reader backends with auto-fallback), RRF-ranked combine mode, and credential resolution via env/shell/literal or Pi-managed authentication. Provider availability depends on credentials, quota, and network access. Firecrawl supports **keyless mode** (1,000 free credits/month, subject to its IP restrictions).
 
 ## Installation
 
@@ -105,6 +105,8 @@ The `web_read` tool supports these parameters:
 | 8   | **Exa**               | 1,000 free queries/month      |   Yes    | [exa.ai](https://dashboard.exa.ai/api-keys)                       |
 | 8.1 | **Exa MCP**           | Unlimited (rate-limited)      |  **No**  | [mcp.exa.ai](https://mcp.exa.ai)                                 |
 | 8.2 | **OpenAI Codex**      | Included with Pi login        |  **No**  | Enable backend, then run `/login` in Pi and select OpenAI Codex  |
+| 8.3 | **Anthropic**         | Usage-based, needs login      |  **No**  | Enable backend, then run `/login` in Pi and select Anthropic     |
+| 8.4 | **Gemini**            | Depends on Pi provider        |  **No**  | Enable backend and sign in to the selected Google provider in Pi |
 | 9   | **LangSearch**        | Genuinely free, no CC         |   Yes    | [langsearch.com](https://langsearch.com)                          |
 | 10  | **WebSearchAPI.ai**   | 2,000 free credits            |   Yes    | [websearchapi.ai](https://www.websearchapi.ai)                    |
 | 11  | **Perplexity Sonar**  | Paid (usage-based)            |   Yes    | [perplexity.ai](https://docs.perplexity.ai)                       |
@@ -121,7 +123,13 @@ The `web_read` tool supports these parameters:
 >
 > **Jina AI:** Search (`s.jina.ai`) requires a free API key from [jina.ai](https://jina.ai). Content extraction via `web_read` uses Jina Reader (`r.jina.ai`) which is **free and needs no API key**.
 >
-> **OpenAI Codex** uses Pi-managed authentication. Enable `openai-codex` in `search.json`, then run `/login` in Pi and select OpenAI Codex. No `apiKey` is required in `search.json`. You can optionally set `model` (default: `gpt-5.4-mini`).
+> **OpenAI Codex** uses Pi-managed authentication. Enable `openai-codex` in `search.json`, then run `/login` in Pi and select OpenAI Codex. No `apiKey` is required in `search.json`. You can optionally set `model` (default: `gpt-5.5`).
+>
+> **Anthropic** and **Gemini** follow the same structured-result pattern as OpenAI Codex, with optional `model` overrides (`claude-haiku-4-5` / `gemini-2.5-flash`). All three prefer `ctx.modelRegistry` so Pi owns authentication and OAuth refresh, including extension-registered providers. Classic hosts can use their Pi API-key resolver; unsupported builds fail clearly so hub auto-fallback can continue.
+>
+> **Gemini** checks `google-antigravity`, `google-gemini-cli`, then `google`; set `provider` to select one explicitly (for example, `"provider": "google-antigravity"`). Antigravity requires its provider extension and `/ag login`. There is no implicit OpenCode/Zen fallback. Grounding and structured submission use separate turns because Google search cannot be mixed with functions on Cloud Code Assist.
+>
+> **LLM timeouts:** `timeout` defaults to **120000 ms total**, including both turns, and caller cancellation is propagated. Codex defaults to `reasoningEffort: "low"`. Native search and model calls consume the selected provider's quota and may incur charges; parallel combine calls multiple providers.
 >
 > **Perplexity Sonar** supports multiple model variants. Set `model` in your Perplexity backend config to choose: `sonar` (default, fast), `sonar-pro` (higher quality), `sonar-deep-research` (multi-step reasoning), or `sonar-reasoning` (DeepSeek R1-based).
 >
@@ -137,8 +145,8 @@ The `web_read` tool supports these parameters:
 
 Configure backends globally (all projects) or per-project:
 
-**Global:** `~/.pi/agent/extensions/search.json`
-**Project:** `.pi/search.json` (project takes precedence)
+**Global:** `~/.pi/agent/extensions/search.json` (or `$PI_CODING_AGENT_DIR/extensions/search.json`)
+**Project:** `.pi/search.json` (project takes precedence, backend fields merge)
 
 ```json
 {
@@ -154,7 +162,9 @@ Configure backends globally (all projects) or per-project:
     "tavily": { "enabled": true, "apiKey": "TAVILY_API_KEY" },
     "brave": { "enabled": true, "apiKey": "BRAVE_API_KEY" },
     "exa": { "enabled": true, "apiKey": "EXA_API_KEY" },
-    "openai-codex": { "enabled": true, "model": "gpt-5.4-mini" },
+    "openai-codex": { "enabled": true, "model": "gpt-5.5", "reasoningEffort": "low" },
+    "anthropic": { "enabled": true, "model": "claude-haiku-4-5" },
+    "gemini": { "enabled": true, "provider": "google-antigravity", "model": "gemini-2.5-flash" },
     "firecrawl": { "enabled": true, "apiKey": "FIRECRAWL_API_KEY" },  // apiKey optional — works keyless (1k credits/mo)
     "langsearch": { "enabled": true, "apiKey": "LANGSEARCH_API_KEY" },
     "websearchapi": { "enabled": true, "apiKey": "WEBSEARCHAPI_API_KEY" },
@@ -264,16 +274,18 @@ RRF assigns each result a score of `Σ(1 / (60 + rank_i))` across all backends t
 - API keys are stored in local config files only (`~/.pi/agent/extensions/search.json` or `.pi/search.json`), never sent to any third party besides the chosen backend
 - **Env vars and shell commands** are supported for credential resolution — the config file is trusted (you own it), but never commit plain API keys to version control
 - DuckDuckGo queries use spawned Python subprocess (abortable via signal)
-- All HTTP backends have a 30-second timeout; shell commands for credentials have a 5-second timeout
+- HTTP backends default to 30-second timeouts; LLM searches default to one 120-second total deadline across both turns. Credential shell commands have a 5-second timeout.
 - Error messages are sanitized — API response bodies are truncated and key-like patterns are redacted
 - The `.pi/` directory is in `.gitignore` — **never commit API keys to version control**
 
 ## Testing
 
 ```bash
-```bash
-# Run all tests
-npx vitest run
+# Typecheck (also enforced in CI)
+npm run check
+
+# Run all tests — config tests are isolated from your personal settings
+npm test
 
 # Run specific test files
 npx vitest run backends/parsers.test.ts extensions/openai-codex.test.ts

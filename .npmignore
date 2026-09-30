@@ -29,7 +29,8 @@ benchmark/
 docs/
 
 # Tests
-backends/*.test.ts
+**/*.test.ts
+tests/
 
 # Misc
 *.log

@@ -73,11 +73,7 @@ export function loadConfig(cwd: string): SearchConfig {
 				const merged = { ...preProjectBackends, ...config.backends };
 				for (const [key, val] of Object.entries(project.backends)) {
 					const bc = val as BackendConfig | undefined;
-					if (bc && merged[key]) {
-						merged[key] = { ...merged[key], ...bc };
-					} else {
-						merged[key] = bc;
-					}
+					merged[key] = bc ? { ...preProjectBackends[key], ...bc } : bc;
 				}
 				config.backends = merged;
 			}

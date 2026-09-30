@@ -1,5 +1,5 @@
 /**
- * Extension — Unified web search (19 backends) + content extraction (web_read)
+ * Extension — Unified web search (21 backends) + content extraction (web_read)
  *
  * Backends (choose any, all disabled by default):
  *   duckduckgo    — ✅ Free, no key, via Python ddgs lib. Rate-limited.
@@ -73,6 +73,7 @@ export default function (pi: ExtensionAPI) {
 			"Supports DuckDuckGo (free, no key), " +
 			"Marginalia Search (free, shared public key), Serper, Tavily, Exa, Brave, " +
 			"LangSearch, Firecrawl, WebSearchAPI, Perplexity Sonar, and SearXNG (most need API keys). " +
+			"Also supports Pi-managed OpenAI Codex, Anthropic, and Gemini retrieval. " +
 			"The best available backend is used automatically. " +
 			"Use combine=true to query all enabled backends in parallel for broader coverage. " +
 			"Use for fact-finding, research, documentation lookups, and current events.",
@@ -96,7 +97,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			backend: Type.Optional(
 				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa", "exa_mcp",
-					"openai-codex", "brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
+					"openai-codex", "anthropic", "gemini", "brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
 					"searxng", "linkup", "youcom", "fastcrw", "sofya", "auto"] as const, {
 					description:
 						"Backend to use. 'auto' picks the best configured backend (default)",
@@ -122,6 +123,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			signal?.throwIfAborted();
 			refreshConfig(ctx.cwd);
 			const numResults = Math.max(1, Math.min(params.numResults ?? 10, 20));
 			const requestedBackend = params.backend || "auto";
@@ -150,7 +152,9 @@ export default function (pi: ExtensionAPI) {
 				const backendLabel = BACKEND_DEFS[requestedBackend]?.label || requestedBackend;
 				setStatus(`🔍 ${backendLabel}: searching...`);
 				try {
-					const results = await runBackend(requestedBackend, params.query, numResults, signal);
+					const results = await runBackend(requestedBackend, params.query, numResults, signal, {
+						hostContext: ctx,
+					});
 					setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 					return {
 						content: [{ type: "text", text: compact ? formatResultsCompact(results) : formatResults(params.query, requestedBackend, results) }],
@@ -181,7 +185,10 @@ export default function (pi: ExtensionAPI) {
 						query: params.query,
 						numResults,
 						signal,
-						runBackend,
+						runBackend: (backend, query, perBackendResults, combineSignal) =>
+							runBackend(backend, query, perBackendResults, combineSignal, {
+								hostContext: ctx,
+							}),
 					});
 
 					if (usableBackendCount === 0) {
@@ -226,6 +233,7 @@ export default function (pi: ExtensionAPI) {
 								params.query,
 								Math.ceil(numResults / activeBackends.length),
 								signal,
+								{ hostContext: ctx },
 							);
 							return {
 								backend,
@@ -233,6 +241,7 @@ export default function (pi: ExtensionAPI) {
 								success: true,
 							};
 						} catch (err) {
+							if (signal?.aborted) throw err;
 							return {
 								backend,
 								results: [] as SearchResultWithBackend[],
@@ -297,7 +306,9 @@ export default function (pi: ExtensionAPI) {
 					const t0 = Date.now();
 					setStatus(`🔍 ${backendLabel}: searching...`);
 					try {
-						const results = await runBackend(backend, params.query, numResults, signal);
+						const results = await runBackend(backend, params.query, numResults, signal, {
+							hostContext: ctx,
+						});
 						recordLatency(backend, Date.now() - t0);
 						setStatus(`🔍 ${backendLabel}: ${results.length} results`);
 						return {
@@ -316,6 +327,7 @@ export default function (pi: ExtensionAPI) {
 							},
 						};
 					} catch (err) {
+						if (signal?.aborted) throw err;
 						errors.push(`${backend}: ${(err as Error).message}`);
 						setStatus(`❌ ${backendLabel}: failed, trying next...`);
 					}

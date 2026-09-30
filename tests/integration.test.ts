@@ -8,6 +8,9 @@
  * - SearchCache
  */
 
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { reciprocalRankFusion, runTargetedCombine, selectBackendsForFallback } from "../extensions/dispatch.js";
 import { recordBackendSuccess, recordBackendFailure } from "../extensions/scoring.js";
@@ -397,11 +400,52 @@ describe("resolveConfigValue", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadConfig", () => {
+	let root: string;
+	let agentDir: string;
+	let projectDir: string;
+
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "pi-search-config-"));
+		agentDir = join(root, "agent");
+		projectDir = join(root, "project");
+		mkdirSync(join(agentDir, "extensions"), { recursive: true });
+		mkdirSync(join(projectDir, ".pi"), { recursive: true });
+		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		rmSync(root, { recursive: true, force: true });
+	});
+
 	it("returns default config when no config files exist", () => {
-		const cfg = loadConfig("/nonexistent/path");
+		const cfg = loadConfig(projectDir);
 		expect(cfg.defaultBackend).toBe("duckduckgo");
-		// May have auto-enabled backends from convenience env vars
 		expect(typeof cfg.backends).toBe("object");
+	});
+
+	it("reads global config from the configured agent directory", () => {
+		writeFileSync(join(agentDir, "extensions", "search.json"), JSON.stringify({
+			defaultBackend: "auto", combine: true, combineMode: "targeted",
+			backends: { "openai-codex": { enabled: true } },
+		}));
+		expect(loadConfig(projectDir)).toMatchObject({
+			defaultBackend: "auto", combine: true, combineMode: "targeted",
+			backends: { "openai-codex": { enabled: true } },
+		});
+	});
+
+	it("merges project backend overrides without losing global LLM settings", () => {
+		writeFileSync(join(agentDir, "extensions", "search.json"), JSON.stringify({
+			backends: { gemini: { enabled: true, model: "gemini-2.5-flash", timeout: 120_000 } },
+		}));
+		writeFileSync(join(projectDir, ".pi", "search.json"), JSON.stringify({
+			backends: { gemini: { timeout: 60_000 }, anthropic: { enabled: true } },
+		}));
+		expect(loadConfig(projectDir).backends).toMatchObject({
+			gemini: { enabled: true, model: "gemini-2.5-flash", timeout: 60_000 },
+			anthropic: { enabled: true },
+		});
 	});
 });
 
@@ -511,15 +555,18 @@ describe("SearchCache", () => {
 		expect(cache.get("missing")).toBeUndefined();
 	});
 
-	it("evicts entries after TTL", async () => {
-		const cache = new SearchCache<string>(20, 10); // 20ms TTL
-		cache.set("key1", "value1");
-		// Verify entry exists just before TTL expires
-		await new Promise((r) => setTimeout(r, 15));
-		expect(cache.get("key1")).toBe("value1"); // still valid at 15ms < 20ms TTL
-		// Verify entry is evicted after TTL
-		await new Promise((r) => setTimeout(r, 10)); // now at 25ms > 20ms TTL
-		expect(cache.get("key1")).toBeUndefined();
+	it("evicts entries after TTL", () => {
+		vi.useFakeTimers();
+		try {
+			const cache = new SearchCache<string>(20, 10);
+			cache.set("key1", "value1");
+			vi.advanceTimersByTime(15);
+			expect(cache.get("key1")).toBe("value1");
+			vi.advanceTimersByTime(10);
+			expect(cache.get("key1")).toBeUndefined();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("evicts oldest when at max capacity", () => {

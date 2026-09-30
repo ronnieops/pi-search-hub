@@ -5,7 +5,7 @@
 export interface BackendConfig {
 	enabled?: boolean;
 	apiKey?: string;
-	/** Per-backend timeout override in milliseconds. Default: 30000 */
+	/** Timeout in milliseconds. LLM searches default to 120000 total across both turns; HTTP defaults to 30000. */
 	timeout?: number;
 	/** Per-backend max results override. Default: 10 */
 	maxResults?: number;
@@ -13,8 +13,12 @@ export interface BackendConfig {
 	headers?: Record<string, string>;
 	/** SearXNG-specific: base URL of the self-hosted instance (e.g. http://localhost:8888) */
 	instanceUrl?: string;
-	/** Perplexity-specific: model variant (sonar, sonar-pro, sonar-deep-research, sonar-reasoning). Default: sonar */
+	/** Model override for LLM searches and Perplexity. */
 	model?: string;
+	/** Gemini-only: explicit Pi provider (e.g. google-antigravity or google). No Zen fallback by default. */
+	provider?: string;
+	/** LLM-search-specific (openai-codex): reasoning effort override. Default: "low" */
+	reasoningEffort?: string;
 	/** DuckDuckGo-specific: ddgs backend(s) — "auto", "duckduckgo", "bing", "brave", "google", comma-delimited */
 	ddgsBackend?: string;
 	/** DuckDuckGo-specific: region (e.g. "us-en"). Default: "us-en" */
@@ -60,7 +64,8 @@ export interface SearchConfig {
 		exa?: BackendConfig;
 		exa_mcp?: BackendConfig;
 		"openai-codex"?: BackendConfig;
-		brave?: BackendConfig;
+		anthropic?: BackendConfig;
+		gemini?: BackendConfig;
 		braveLLM?: BackendConfig;
 		"brave-llm"?: BackendConfig;
 		langsearch?: BackendConfig;
@@ -97,6 +102,13 @@ export interface BackendRunner {
 	search: (
 		query: string,
 		numResults: number,
-		deps: { key?: string; instanceUrl?: string; signal?: AbortSignal; backendConfig?: BackendConfig },
+		deps: {
+			key?: string;
+			instanceUrl?: string;
+			signal?: AbortSignal;
+			backendConfig?: BackendConfig;
+			/** ExtensionContext from the tool call (host ModelRegistry access). */
+			hostContext?: unknown;
+		},
 	) => Promise<{ results: SearchResult[] }>;
 }

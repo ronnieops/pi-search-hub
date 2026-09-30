@@ -15,6 +15,8 @@ import { searchTavily } from "./tavily.js";
 import { searchExa } from "./exa.js";
 import { searchExaMCP } from "./exa-mcp.js";
 import { searchOpenAICodex } from "./openai-codex.js";
+import { searchAnthropic } from "./anthropic.js";
+import { searchGemini } from "./gemini.js";
 import { searchBrave } from "./brave.js";
 import { searchLangSearch } from "./langsearch.js";
 import { searchFirecrawl } from "./firecrawl.js";
@@ -129,8 +131,32 @@ export const BACKEND_DEFS: Record<string, BackendRunner> = {
 		needsInstanceUrl: false,
 		label: "OpenAI Codex",
 		setupLabel: "OpenAI Codex (draws from subscription)",
-		search: async (query, numResults, { signal, backendConfig }) => {
-			const result = await searchOpenAICodex(query, numResults, signal, backendConfig);
+		search: async (query, numResults, { signal, backendConfig, hostContext }) => {
+			const result = await searchOpenAICodex(query, numResults, signal, backendConfig, hostContext);
+			return { results: result.results };
+		},
+	},
+	anthropic: {
+		needsKey: false,
+		needsKeyFromConfig: false,
+		optionalKey: false,
+		needsInstanceUrl: false,
+		label: "Anthropic",
+		setupLabel: "Anthropic (usage-based, needs login)",
+		search: async (query, numResults, { signal, backendConfig, hostContext }) => {
+			const result = await searchAnthropic(query, numResults, signal, backendConfig, hostContext);
+			return { results: result.results };
+		},
+	},
+	gemini: {
+		needsKey: false,
+		needsKeyFromConfig: false,
+		optionalKey: false,
+		needsInstanceUrl: false,
+		label: "Gemini",
+		setupLabel: "Gemini (Pi-managed Google provider)",
+		search: async (query, numResults, { signal, backendConfig, hostContext }) => {
+			const result = await searchGemini(query, numResults, signal, backendConfig, hostContext);
 			return { results: result.results };
 		},
 	},
@@ -284,8 +310,9 @@ export async function runBackend(
 	query: string,
 	numResults: number,
 	signal?: AbortSignal,
-	options?: { skipCache?: boolean },
+	options?: { skipCache?: boolean; hostContext?: unknown },
 ): Promise<SearchResult[]> {
+	signal?.throwIfAborted();
 	// Check cache first (inline — no persistent key var needed here)
 	if (!options?.skipCache) {
 		const cached = searchCache.get(cacheKey(query, backend, numResults));
@@ -293,6 +320,7 @@ export async function runBackend(
 	}
 
 	await waitForCooldown(backend);
+	signal?.throwIfAborted();
 	const def = BACKEND_DEFS[backend];
 	if (!def) throw new Error(`Unknown backend: ${backend}`);
 
@@ -323,7 +351,14 @@ export async function runBackend(
 	const bc = (config.backends as Record<string, BackendConfig> | undefined)?.[backend];
 	const startTime = Date.now();
 	try {
-		const result = await def.search(query, numResults, { key, instanceUrl, signal, backendConfig: bc });
+		const result = await def.search(query, numResults, {
+			key,
+			instanceUrl,
+			signal,
+			backendConfig: bc,
+			hostContext: options?.hostContext,
+		});
+		signal?.throwIfAborted();
 		const latencyMs = Date.now() - startTime;
 		// Cache the result
 		searchCache.set(cacheKey(query, backend, numResults), result.results);

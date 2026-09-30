@@ -13,7 +13,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 }));
 
 vi.mock("@earendil-works/pi-ai", () => ({
-	getModel: () => ({ id: "gpt-5.4-mini" }),
+	getModel: () => ({ id: "gpt-5.5" }),
 	streamOpenAICodexResponses: streamOpenAICodexResponsesMock,
 }));
 

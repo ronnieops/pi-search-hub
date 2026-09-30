@@ -25,7 +25,7 @@ export const MISSING_KEY_HELP =
 // ---------------------------------------------------------------------------
 
 export function getAgentDir(): string {
-	return join(process.env.HOME || process.env.USERPROFILE || "~", ".pi", "agent");
+	return process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || "~", ".pi", "agent");
 }
 
 // ---------------------------------------------------------------------------
