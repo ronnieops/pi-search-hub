@@ -12,7 +12,6 @@ on:
     types: [published]
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -36,8 +35,20 @@ jobs:
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           NAME=$(node -p "require('./package.json').name")
+          # On a release trigger, checkout is at the release tag: the tag and
+          # package.json must agree, or fail loudly instead of silently
+          # publishing/skipping the wrong version.
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG_VERSION="${{ github.event.release.tag_name }}"
+            TAG_VERSION="${TAG_VERSION#v}"
+            if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+              echo "ERROR: release tag $TAG_VERSION does not match package.json version ($PKG_VERSION)."
+              echo "Merge the version bump into the tagged commit before publishing."
+              exit 1
+            fi
+          fi
           if [ -n "${{ inputs.version }}" ] && [ "$PKG_VERSION" != "${{ inputs.version }}" ]; then
-            echo "ERROR: package.json version ($PKG_VERSION) != requested version (${{ inputs.version }})"
+            echo "ERROR: package.json version ($PKG_VERSION) != requested version (${inputs.version})"
             exit 1
           fi
           echo "Publishing $NAME@$PKG_VERSION"
@@ -49,7 +60,7 @@ jobs:
           NAME=$(node -p "require('./package.json').name")
           EXISTING=$(npm view "$NAME@$PKG_VERSION" version 2>/dev/null || echo "")
           if [ -n "$EXISTING" ]; then
-            echo "$NAME@$PKG_VERSION already published — skipping"
+            echo "::warning::$NAME@$PKG_VERSION already published — skipping (re-run of a published version?)"
             echo "skip_publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "$NAME@$PKG_VERSION not on registry — will publish"
