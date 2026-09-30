@@ -58,13 +58,16 @@ async function callMCP(
 		jsonrpc: "2.0",
 		id,
 		method,
-		params: params ? { arguments: params } : undefined,
+		params: params
+			? { name: String(params.name), arguments: (params.arguments ?? {}) as Record<string, unknown> }
+			: undefined,
 	};
 
 	const response = await fetchFn(EXA_MCP_ENDPOINT, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
+			"Accept": "application/json, text/event-stream",
 		},
 		body: JSON.stringify(request),
 		signal: timeoutSignal(undefined, 30000),
@@ -75,7 +78,17 @@ async function callMCP(
 		throw new Error(`Exa MCP ${sanitizeError(response.status, text)}`);
 	}
 
-	const data = (await response.json()) as MCPResponse;
+	// MCP streamable-HTTP transport may answer with plain JSON or an SSE stream.
+	const contentType = response.headers.get("content-type") ?? "";
+	let data: MCPResponse;
+	if (contentType.includes("text/event-stream")) {
+		const sseText = await response.text();
+		const dataLines = sseText.split(/\r?\n/).filter((l) => l.startsWith("data:"));
+		const payload = dataLines.length > 0 ? dataLines[dataLines.length - 1].slice(5).trim() : sseText.trim();
+		data = JSON.parse(payload) as MCPResponse;
+	} else {
+		data = (await response.json()) as MCPResponse;
+	}
 
 	if (data.error) {
 		throw new Error(`Exa MCP error: ${data.error.message}`);
@@ -117,6 +130,25 @@ async function callMCP(
 		}
 	} catch {
 		// Not JSON, try line-by-line parsing
+	}
+
+	// Parse "Title:/URL:/Highlights:" blocks separated by --- (current Exa MCP text format)
+	const blockResults: SearchResult[] = [];
+	for (const block of text.split(/\n-{3,}\n/)) {
+		const titleMatch = block.match(/^Title:\s*(.+)$/m);
+		const urlMatch = block.match(/^URL:\s*(\S+)$/m);
+		if (!titleMatch || !urlMatch) continue;
+		const highlightsMatch = block.match(/Highlights:\r?\n([\s\S]*)$/);
+		const highlights = highlightsMatch ? highlightsMatch[1].trim() : "";
+		blockResults.push({
+			title: titleMatch[1].trim(),
+			url: urlMatch[1].trim(),
+			snippet: highlights.slice(0, 500),
+			content: highlights,
+		});
+	}
+	if (blockResults.length > 0) {
+		return { results: blockResults };
 	}
 
 	// Fallback: parse line-by-line (url\t title\t snippet)
