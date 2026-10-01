@@ -10,6 +10,7 @@ import { fetchSofya } from "../backends/sofya.js";
 import { fetchFirecrawl } from "../backends/firecrawl.js";
 import { fetchExaContents } from "../backends/exa.js";
 import { fetchExaMCP } from "../backends/exa-mcp.js";
+import { fetchDefuddle } from "./defuddle.js";
 
 /** Cap on a single web_read response body, in bytes, to bound memory use on heavy pages. */
 const READ_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -30,6 +31,7 @@ export interface FetchResult {
 /** Human-readable label for each reader. */
 export function readerLabel(reader: string): string {
 	switch (reader) {
+		case "defuddle": return "Defuddle";
 		case "sofya": return "Sofya";
 		case "firecrawl": return "Firecrawl";
 		case "exa": return "Exa";
@@ -42,7 +44,7 @@ export function readerLabel(reader: string): string {
  * Fetch a URL using the specified reader backend.
  *
  * @param url    - The URL to fetch (already validated for SSRF).
- * @param reader - Reader backend name ("jina", "sofya", "firecrawl", "exa", "exa_mcp").
+ * @param reader - Reader backend name ("jina", "defuddle", "sofya", "firecrawl", "exa", "exa_mcp").
  * @param params - Additional parameters (fresh, keywords, mode, objective).
  * @param signal - Optional abort signal.
  * @param config - Search config for credential resolution.
@@ -83,6 +85,14 @@ export async function fetchWithReader(
 		case "exa_mcp": {
 			const result = await fetchExaMCP(url, signal);
 			return { content: result.content, reader: "exa_mcp" };
+		}
+
+		case "defuddle": {
+			// Local, keyless HTML → Markdown extraction. Opt-in second view;
+			// Jina remains the default reader. Throws on empty extraction so
+			// the fallback chain can try the next reader.
+			const result = await fetchDefuddle(url, signal);
+			return { content: result.content, reader: "defuddle" };
 		}
 
 		default: {

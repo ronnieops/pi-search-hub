@@ -337,7 +337,7 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Fetch a URL as markdown. Use objective for a concrete question, keywords for long pages, " +
 			"rush for speed, smart for better narrowing. Use reader param to switch between " +
-			"Jina (default, free) and Sofya (250+ site parsers, needs API key).",
+			"Jina (default, free), Defuddle (local opt-in second view), and Sofya (250+ site parsers, needs API key).",
 		promptSnippet: "Read content from a web page (supports markdown extraction)",
 		promptGuidelines: [
 			"Use web_read when you need to read the content of a specific URL",
@@ -371,9 +371,10 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			reader: Type.Optional(
-				StringEnum(["jina", "sofya", "firecrawl", "exa", "exa_mcp"] as const, {
+				StringEnum(["jina", "defuddle", "sofya", "firecrawl", "exa", "exa_mcp"] as const, {
 					description:
 						"Reader backend: 'jina' (default, free, supports keywords/mode/objective), " +
+						"'defuddle' (local, keyless, opt-in second view when Jina output is poor), " +
 						"'sofya' (250+ site-specific parsers, needs API key), " +
 						"'firecrawl' (keyless, 1000 credits/mo), " +
 						"'exa' (needs API key, 1000 req/mo), or " +
@@ -781,7 +782,7 @@ export default function (pi: ExtensionAPI) {
 						validate: (v: string) => {
 							const parts = v.split(",").map(s => s.trim()).filter(Boolean);
 							if (parts.length === 0) return "At least one reader required";
-							const valid = ["jina", "sofya", "firecrawl", "exa", "exa_mcp"];
+							const valid = ["jina", "defuddle", "sofya", "firecrawl", "exa", "exa_mcp"];
 							const invalid = parts.filter(p => !valid.includes(p));
 							if (invalid.length > 0) return `Unknown reader(s): ${invalid.join(", ")}. Valid: ${valid.join(", ")}`;
 							return undefined;
@@ -797,13 +798,13 @@ export default function (pi: ExtensionAPI) {
 			}
 			case "reader": {
 				const choice = await ctx.ui.select(`${label} — current: ${selected.split(": ")[1]}`, [
-					"jina (free)", "sofya (needs key)", "firecrawl (keyless)", "exa (needs key)", "exa_mcp (free)", "Cancel"
+					"jina (free)", "defuddle (local)", "sofya (needs key)", "firecrawl (keyless)", "exa (needs key)", "exa_mcp (free)", "Cancel"
 				]);
 				if (choice === "Cancel" || !choice) {
 					ctx.ui.notify("Setup cancelled.", "info");
 					return;
 				}
-				value = choice.startsWith("jina") ? "jina" : choice.startsWith("firecrawl") ? "firecrawl" : choice.startsWith("exa_mcp") ? "exa_mcp" : choice.startsWith("exa") ? "exa" : "sofya";
+				value = choice.startsWith("jina") ? "jina" : choice.startsWith("defuddle") ? "defuddle" : choice.startsWith("firecrawl") ? "firecrawl" : choice.startsWith("exa_mcp") ? "exa_mcp" : choice.startsWith("exa") ? "exa" : "sofya";
 				break;
 			}
 			case "selectionStrategy": {

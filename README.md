@@ -63,6 +63,7 @@ The `web_read` tool supports multiple **reader backends**:
 | Reader     | Free? | Needs Key? | Notes |
 |------------|-------|------------|-------|
 | **Jina**   | ✅    | Optional   | Default. Supports `objective`, `keywords`, `mode`, `fresh`. Free at r.jina.ai |
+| **Defuddle** | ✅ | No | Local, keyless opt-in second view (Defuddle 0.19.4). Best when Jina output is boilerplate-heavy or code examples lose fencing. No JS rendering — JS pages fall back to the next reader. |
 | **Sofya**  | ❌    | Yes        | 250+ site-specific parsers for clean markdown |
 | **Firecrawl** | ✅ | No (keyless) | 1,000 free credits/month, no API key required |
 | **Exa**    | ❌    | Yes        | 1,000 req/month (shared with Exa search) |
@@ -85,7 +86,7 @@ This tries Firecrawl first, falls back to Jina, then Sofya. Exa and Exa MCP are 
 
 The `web_read` tool supports these parameters:
 
-- **reader** — override the reader backend (`jina`, `sofya`, `firecrawl`, `exa`, `exa_mcp`)
+- **reader** — override the reader backend (`jina`, `defuddle`, `sofya`, `firecrawl`, `exa`, `exa_mcp`). `defuddle` runs fully local with no key; use it for a second view when Jina output is poor.
 - **objective** — CSS selector to target specific content (Jina only)
 - **keywords** — relevant terms to highlight on long pages
 - **mode** — `rush` for speed (innerText) or `smart` (markdown extraction)
