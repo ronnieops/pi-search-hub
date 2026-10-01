@@ -35,7 +35,8 @@
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "@mariozechner/pi-ai": {
@@ -43,10 +44,10 @@
     },
     "@mariozechner/pi-coding-agent": {
       "optional": true
+    },
+    "typebox": {
+      "optional": true
     }
-  },
-  "dependencies": {
-    "typebox": "^1.1.24"
   },
   "devDependencies": {
     "@types/node": "^25.6.0"
