@@ -85,6 +85,8 @@ export interface SearchResult {
 
 export interface SearchResultWithBackend extends SearchResult {
 	backend?: string;
+	/** Every backend that returned this URL, primary first, deduplicated. */
+	sources?: string[];
 }
 
 export interface BackendRunner {

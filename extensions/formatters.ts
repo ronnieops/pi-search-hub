@@ -5,6 +5,12 @@
 import type { SearchResult, SearchResultWithBackend } from "./types.js";
 import type { BackendRunner } from "./types.js";
 
+/** Every backend that returned this result, falling back to its primary label. */
+function sourceNames(r: SearchResultWithBackend): string[] {
+	if (r.sources && r.sources.length > 0) return r.sources;
+	return r.backend !== undefined ? [r.backend] : [];
+}
+
 // ---------------------------------------------------------------------------
 // Compact formatting
 // ---------------------------------------------------------------------------
@@ -28,7 +34,8 @@ export function formatCombinedResultsCompact(
 	const lines = results.map((r, i) => {
 		const title = (r.title || "Untitled").slice(0, 60);
 		const url = r.url.length > 50 ? r.url.slice(0, 47) + "..." : r.url;
-		const src = r.backend ? ` [${r.backend}]` : "";
+		const names = sourceNames(r);
+		const src = names.length > 0 ? ` [${names.join(", ")}]` : "";
 		return `${i + 1}. ${title}${src} — ${url}`;
 	});
 	return lines.join("\n");
@@ -101,8 +108,9 @@ export function formatCombinedResults(
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
 		lines.push(`### ${i + 1}. ${r.title || "Untitled"}`);
-		if (r.backend) {
-			lines.push(`   *Source: ${backendLabel[r.backend] || r.backend}*`);
+		const labels = sourceNames(r).map((name) => backendLabel[name] || name);
+		if (labels.length > 0) {
+			lines.push(`   *Source: ${labels.join(", ")}*`);
 		}
 		lines.push(`   URL: ${r.url}`);
 		const displayText = r.snippet || r.content || "";

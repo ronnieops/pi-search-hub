@@ -1,6 +1,7 @@
 # Release v2.9.0
 
 ## 🚀 New Features
+- **Multi-source provenance** — combined results now list every backend that returned a URL (`*Source: Exa, SearXNG*`), not just the one whose copy survived URL dedup.
 - **Reader auto-fallback** — `web_read` now automatically falls through to the next reader when the primary returns 422, 5xx, or a network error. Auth errors (401, 403) are fatal and do not fall through. Status line shows which reader is being tried and which succeeded.
 - **Configurable reader fallback order** — New `readerFallback` config option in `search.json` lets users specify which readers to try and in what order. Default: `["jina", "sofya", "firecrawl", "exa", "exa_mcp"]`. Exclude expensive readers or put a preferred reader first.
 - **`/search-setup` global settings UI** — Now includes reader fallback order configuration with validation (only valid reader names accepted).

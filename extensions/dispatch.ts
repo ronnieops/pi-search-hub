@@ -110,10 +110,13 @@ export async function runTargetedCombine({
 		}
 	}
 
+	const only = usableBackends[0];
 	return {
 		results: usableBackends.length > 1
 			? reciprocalRankFusion(usableBackends, numResults)
-			: (usableBackends[0]?.results.slice(0, numResults) ?? []),
+			: only === undefined
+				? []
+				: only.results.slice(0, numResults).map((result) => attachSources(result, [only.backend])),
 		backendStats,
 		usableBackendCount: usableBackends.length,
 	};
@@ -136,7 +139,8 @@ function normalizeUrl(url: string): string {
 
 /**
  * Merge results from multiple backends using Reciprocal Rank Fusion (k=60).
- * URL dedup keeps the result with the richest content.
+ * URL dedup keeps the result with the richest content; the merged result
+ * lists every backend that returned the URL in `sources`.
  */
 export function reciprocalRankFusion(
 	backendResults: Array<{ backend: string; results: SearchResultWithBackend[] }>,
@@ -181,5 +185,18 @@ export function reciprocalRankFusion(
 			return b.backends.length - a.backends.length;
 		})
 		.slice(0, maxResults)
-		.map(entry => entry.result);
+		.map(entry => attachSources(entry.result, entry.backends));
+}
+
+/** All backends that returned this URL, primary label first, deduplicated. */
+function attachSources(
+	result: SearchResultWithBackend,
+	contributors: string[],
+): SearchResultWithBackend {
+	const unique = [...new Set(contributors)];
+	const primary = result.backend;
+	const sources = primary !== undefined && unique.includes(primary)
+		? [primary, ...unique.filter((backend) => backend !== primary)]
+		: unique;
+	return { ...result, sources };
 }

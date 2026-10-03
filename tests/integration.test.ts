@@ -209,7 +209,7 @@ describe("runTargetedCombine", () => {
 		});
 
 		expect(result.usableBackendCount).toBe(1);
-		expect(result.results).toEqual([{ ...resultFor("a")[0], backend: "a" }]);
+		expect(result.results).toEqual([{ ...resultFor("a")[0], backend: "a", sources: ["a"] }]);
 		expect(result.backendStats.get("b")).toMatchObject({ success: true, count: 0 });
 		expect(result.backendStats.get("c")).toMatchObject({ success: false, count: 0, error: "c failed" });
 	});

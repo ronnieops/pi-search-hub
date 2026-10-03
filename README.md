@@ -240,7 +240,7 @@ By default, combine mode uses `combineMode: "all"`:
 1. Queries **ALL** enabled backends in parallel
 2. Each backend receives `numResults / numBackends` as a target
 3. Results are merged using **Reciprocal Rank Fusion** (RRF) — position-based scoring that works across incompatible ranking systems
-4. Each result shows its source backend (e.g., `*Source: Tavily*`)
+4. Each result lists every backend that returned its URL (e.g., `*Source: Tavily, Exa*`)
 5. URL dedup prefers the result with the richest content (content > snippet)
 6. Backend statistics are displayed (which succeeded, result counts, errors)
 
