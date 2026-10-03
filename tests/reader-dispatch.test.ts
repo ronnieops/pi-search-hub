@@ -58,6 +58,65 @@ describe("fetchWithFallback", () => {
 		expect(mockFetchWithReader).toHaveBeenCalledTimes(1);
 	});
 
+	// regression: a reader that returns a body with no content must not count as
+	// success. Firecrawl /v2/scrape does this when `data` exists but `markdown` is
+	// empty, which stopped the web_read chain before the next reader ran.
+	it("falls through when a reader returns empty content", async () => {
+		mockFetchWithReader
+			.mockResolvedValueOnce(makeResult("", "firecrawl"))
+			.mockResolvedValueOnce(makeResult("hello from jina", "jina"));
+
+		const { fetchWithFallback } = await import("../extensions/readers/dispatch.js");
+		const result = await fetchWithFallback(
+			"https://example.com",
+			["firecrawl", "jina"],
+			{},
+			undefined,
+			MINIMAL_CONFIG,
+		);
+
+		expect(result.content).toBe("hello from jina");
+		expect(result.reader).toBe("jina");
+		expect(mockFetchWithReader).toHaveBeenCalledTimes(2);
+	});
+
+	it("falls through when a reader returns whitespace-only content", async () => {
+		mockFetchWithReader
+			.mockResolvedValueOnce(makeResult("  \n\t", "firecrawl"))
+			.mockResolvedValueOnce(makeResult("hello from jina", "jina"));
+
+		const { fetchWithFallback } = await import("../extensions/readers/dispatch.js");
+		const result = await fetchWithFallback(
+			"https://example.com",
+			["firecrawl", "jina"],
+			{},
+			undefined,
+			MINIMAL_CONFIG,
+		);
+
+		expect(result.reader).toBe("jina");
+		expect(mockFetchWithReader).toHaveBeenCalledTimes(2);
+	});
+
+	it("throws when every reader returns empty content", async () => {
+		mockFetchWithReader
+			.mockResolvedValueOnce(makeResult("", "firecrawl"))
+			.mockResolvedValueOnce(makeResult("   ", "jina"));
+
+		const { fetchWithFallback } = await import("../extensions/readers/dispatch.js");
+		await expect(
+			fetchWithFallback(
+				"https://example.com",
+				["firecrawl", "jina"],
+				{},
+				undefined,
+				MINIMAL_CONFIG,
+			),
+		).rejects.toThrow(/All readers failed: firecrawl: firecrawl returned no content/);
+
+		expect(mockFetchWithReader).toHaveBeenCalledTimes(2);
+	});
+
 	it("falls through on 422 error to next reader", async () => {
 		mockFetchWithReader
 			.mockRejectedValueOnce(new Error("Failed to read https://example.com: API error (422): No content available for URL"))

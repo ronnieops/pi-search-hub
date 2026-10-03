@@ -160,7 +160,7 @@ describe("fetchFirecrawl", () => {
 			ok: true,
 			json: async () => ({
 				success: true,
-				data: { markdown: "", metadata: {} },
+				data: { markdown: "# Page", metadata: {} },
 			}),
 		} as Response);
 
@@ -180,6 +180,20 @@ describe("fetchFirecrawl", () => {
 		const err = await fetchFirecrawl("https://example.com", "key").catch(e => e);
 		expect(err).toBeInstanceOf(Error);
 		expect(String(err.message)).toMatch(/Firecrawl scrape/);
+	});
+
+	it("throws when markdown is empty so fallback can continue", async () => {
+		fetchSpy.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				success: true,
+				data: { markdown: "   ", metadata: { title: "Empty" } },
+			}),
+		} as Response);
+
+		const err = await fetchFirecrawl("https://example.com", "key").catch(e => e);
+		expect(err).toBeInstanceOf(Error);
+		expect(String(err.message)).toMatch(/no content/);
 	});
 
 	it("throws when data is missing", async () => {

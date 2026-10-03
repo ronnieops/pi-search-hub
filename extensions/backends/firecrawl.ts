@@ -41,10 +41,16 @@ export async function fetchFirecrawl(
 		throw new Error(`Firecrawl scrape returned no data for ${url}`);
 	}
 	const metadata = result.metadata as Record<string, unknown> | undefined;
+	const content = (result.markdown as string) || "";
+	// `data` without markdown is not a successful scrape. Leaving it as an
+	// empty string makes web_read treat the call as success and skip fallback.
+	if (content.trim().length === 0) {
+		throw new Error(`Firecrawl scrape returned no content for ${url}`);
+	}
 	return {
 		title: (metadata?.title as string) || "",
 		url: (metadata?.sourceURL as string) || url,
-		content: (result.markdown as string) || "",
+		content,
 	};
 }
 

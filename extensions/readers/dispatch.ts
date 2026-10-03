@@ -58,7 +58,13 @@ export async function fetchWithFallback(
 
 		try {
 			const result = await fetchWithReader(url, candidate, params, signal, config);
-			// Success — return immediately
+			// A resolved call with no content did not read the page. Firecrawl
+			// /v2/scrape does this when `data` exists but `markdown` is empty;
+			// other readers can return a blank body too. Treat it as a retryable
+			// failure so the chain continues.
+			if (result.content.trim().length === 0) {
+				throw new Error(`${candidate} returned no content for ${url}`);
+			}
 			return result;
 		} catch (err) {
 			const errorMsg = (err as Error).message;
