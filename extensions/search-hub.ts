@@ -53,6 +53,7 @@ import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } f
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
 import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
+import { rewriteWebSearchTool, webSearchBackendEnum, webSearchDescription } from "./tool-schema.js";
 
 
 
@@ -63,19 +64,16 @@ import { formatResults, formatCombinedResults, formatResultsCompact, formatCombi
 export default function (pi: ExtensionAPI) {
 	// -----------------------------------------------------------------------
 	// Tool: web_search
+	// The backend enum and description advertise the active set (plus "auto")
+	// so the model cannot select an unconfigured backend.
 	// -----------------------------------------------------------------------
+
+	const activeAtRegistration = refreshConfig(process.cwd());
 
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
-		description:
-			"Search the web using one of several backend search engines. " +
-			"Supports DuckDuckGo (free, no key), " +
-			"Marginalia Search (free, shared public key), Serper, Tavily, Exa, Brave, " +
-			"LangSearch, Firecrawl, WebSearchAPI, Perplexity Sonar, and SearXNG (most need API keys). " +
-			"The best available backend is used automatically. " +
-			"Use combine=true to query all enabled backends in parallel for broader coverage. " +
-			"Use for fact-finding, research, documentation lookups, and current events.",
+		description: webSearchDescription(activeAtRegistration),
 		promptSnippet: "Search the web (supports multiple search backends)",
 		promptGuidelines: [
 			"Use web_search when you need up-to-date information, facts, or documentation from the web",
@@ -95,9 +93,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			backend: Type.Optional(
-				StringEnum(["duckduckgo", "jina", "marginalia", "serper", "tavily", "exa", "exa_mcp",
-					"openai-codex", "brave", "brave-llm", "langsearch", "firecrawl", "websearchapi", "perplexity",
-					"searxng", "linkup", "youcom", "fastcrw", "sofya", "auto"] as const, {
+				StringEnum(webSearchBackendEnum(activeAtRegistration), {
 					description:
 						"Backend to use. 'auto' picks the best configured backend (default)",
 				}),
@@ -918,6 +914,17 @@ export default function (pi: ExtensionAPI) {
 		if (config.showStatus !== false) {
 			const status = getActiveBackends().join(", ");
 			ctx.ui.setStatus("search", `search: ${status}`);
+		}
+	});
+
+	// The registered schema is captured at load; keep it in sync with the live
+	// config (search.json edits, per-project config) on every provider request.
+	pi.on("before_provider_request", (event, ctx) => {
+		const payload = (event as { payload?: { tools?: unknown[] } }).payload;
+		if (!payload || !Array.isArray(payload.tools)) return;
+		const active = refreshConfig(ctx?.cwd ?? process.cwd());
+		for (const tool of payload.tools) {
+			rewriteWebSearchTool(tool, active);
 		}
 	});
 }
