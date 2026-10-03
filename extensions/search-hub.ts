@@ -51,7 +51,7 @@ import { getKeySource } from "./credentials.js";
 import { fetchWithReader, fetchWithFallback, readerLabel, DEFAULT_READER_FALLBACK } from "./readers/dispatch.js";
 import { config, refreshConfig, getActiveBackends, recordLatency, latencyMap } from "./config.js";
 import { BACKEND_DEFS, runBackend } from "./backends/registry.js";
-import { selectBackendsForFallback, reciprocalRankFusion, runTargetedCombine } from "./dispatch.js";
+import { selectBackendsForFallback, reciprocalRankFusion, resolveAlwaysInclude, runTieredTargetedCombine } from "./dispatch.js";
 import { formatResults, formatCombinedResults, formatResultsCompact, formatCombinedResultsCompact } from "./formatters.js";
 
 
@@ -167,17 +167,24 @@ export default function (pi: ExtensionAPI) {
 
 			if (effectiveCombine) {
 				if (combineMode === "targeted") {
+					const alwaysInclude = resolveAlwaysInclude(config.alwaysInclude, activeBackends);
 					const orderedBackends = selectBackendsForFallback(
 						config.selectionStrategy ?? "sequential",
 						activeBackends,
 					);
-					setStatus(`🔍 targeted combine: up to 3 of ${activeBackends.length} backends...`);
+					const qualityCount = activeBackends.length - alwaysInclude.length;
+					const freeLabel = alwaysInclude.length > 0
+						? `, plus ${alwaysInclude.map((entry) => entry.backend).join(", ")}`
+						: "";
+					setStatus(`🔍 targeted combine: up to 3 of ${qualityCount} backends${freeLabel}...`);
 					const {
 						results: combined,
 						backendStats,
 						usableBackendCount,
-					} = await runTargetedCombine({
+						qualityUsableCount,
+					} = await runTieredTargetedCombine({
 						orderedBackends,
+						alwaysInclude,
 						query: params.query,
 						numResults,
 						signal,
@@ -195,7 +202,9 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					const attemptedCount = backendStats.size;
-					const incomplete = usableBackendCount < 3 ? `, exhausted after ${usableBackendCount} usable` : "";
+					const incomplete = qualityUsableCount < 3
+						? `, exhausted after ${qualityUsableCount}/3 quality`
+						: "";
 					setStatus(`🔍 targeted combined: ${combined.length} results (${usableBackendCount}/${attemptedCount} usable${incomplete})`);
 
 					return {

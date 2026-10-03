@@ -33,11 +33,26 @@ export interface BackendConfig {
 	topic?: "general" | "news";
 }
 
+/** One free backend queried beside targeted combine, not as a quality slot. */
+export interface AlwaysIncludeBackendConfig {
+	/** Deadline from query start, in milliseconds. A miss drops this backend only. */
+	timeoutMs: number;
+	/** Cap on results contributed to the fusion pool. Unbounded when omitted. */
+	maxResults?: number;
+}
+
 export interface SearchConfig {
 	defaultBackend?: string;
 	combine?: boolean;
 	/** Combine strategy when combine is enabled. "all" queries every active backend; "targeted" queries only enough ordered backends to collect up to 3 usable result sets. */
 	combineMode?: "all" | "targeted";
+	/**
+	 * Free backends queried in parallel with targeted combine and removed from
+	 * that walk. Their results join the combine fusion on equal footing with
+	 * quality results. Honored only when combineMode is "targeted". Keys must
+	 * name enabled backends. Each timeoutMs is a deadline from query start.
+	 */
+	alwaysInclude?: Record<string, AlwaysIncludeBackendConfig>;
 	selectionStrategy?: "sequential" | "random" | "round-robin" | "best-latency";
 	/** Reader backend for web_read. "jina" (default, free), "sofya" (250+ site parsers, needs key), "firecrawl" (keyless, 1000 credits/mo), "exa" (needs key, 1000 req/mo), or "exa_mcp" (zero-config, rate-limited). */
 	reader?: "jina" | "sofya" | "firecrawl" | "exa" | "exa_mcp";

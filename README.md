@@ -255,6 +255,23 @@ For lower fan-out with multiple sources, set targeted combine in `search.json`:
 
 Targeted combine orders active backends using the configured selection strategy, then keeps querying only as many backends as needed to collect up to 3 usable backends. A backend is usable when it returns non-empty results. If fewer than 3 usable backends are available after all active backends are tried, targeted combine returns whatever usable results were found; if none are usable, it reports the collected failures/empty responses.
 
+### Always-include free backends (`alwaysInclude`)
+
+With `combineMode: "targeted"`, `alwaysInclude` names free backends that are queried in parallel with the quality wave instead of taking a quality slot. Their results join the combine fusion on equal footing with quality results — same RRF ranking, URL dedup, and source attribution. Each entry has its own deadline from query start (`timeoutMs`) and an optional cap on how many of its results enter the fusion (`maxResults`):
+
+```json
+{
+  "combine": true,
+  "combineMode": "targeted",
+  "alwaysInclude": {
+    "searxng": { "timeoutMs": 3000, "maxResults": 3 },
+    "langsearch": { "timeoutMs": 5000, "maxResults": 3 }
+  }
+}
+```
+
+A free hit contributes a full reciprocal-rank term like any quality hit: agreement across backends boosts a URL, dedup keeps the richest copy, and the fused ranking is cut to `numResults`. If the quality wave produced nothing, the free lists alone fill the page. A free backend that throws, times out, or returns nothing does not fail the search; a search fails only when every backend — quality and free — produces nothing.
+
 ### RRF Scoring
 
 RRF assigns each result a score of `Σ(1 / (60 + rank_i))` across all backends that returned it. Results are ranked by score, then by number of backends that found them. This means a result ranked #1 by one backend and #5 by another beats a result ranked #4 by two backends.
