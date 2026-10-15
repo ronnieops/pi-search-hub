@@ -29,6 +29,7 @@ export async function searchPerplexity(
 		headers: {
 			"Content-Type": "application/json",
 			"Authorization": `Bearer ${apiKey}`,
+			"X-Pplx-Integration": "pi-search-hub",
 		},
 		body: JSON.stringify(body),
 		signal: timeoutSignal(signal),
